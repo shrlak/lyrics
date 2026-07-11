@@ -180,6 +180,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
+        <span className="kicker">KCCP · Worship Slides</span>
         <h1>KCCP PPT Generator</h1>
         <p>찬양·말씀·설교·광고를 한 번에 정리해 예배 슬라이드 한 개로 만들어 드립니다.</p>
       </header>

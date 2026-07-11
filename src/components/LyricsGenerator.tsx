@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ContiInfo, LibraryEntry, Song } from '../lib/types';
 import { loadConti, type ContiDocument } from '../lib/contiPdf';
-import { splitLyricsAndConfessionSongs } from '../lib/contiText';
+import { deriveSongsFromMusicPages, splitLyricsAndConfessionSongs } from '../lib/contiText';
 import {
   fetchBundledLibrary,
   findEntry,
@@ -99,6 +99,12 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
     })();
   }, []);
 
+  const addFromLibrary = useCallback((entry: LibraryEntry) => {
+    setSongs((l) => [...l, songFromLibrary(entry)]);
+    setEdited(true);
+    setNotice(`'${entry.title}' 을(를) 목록에 추가했습니다.`);
+  }, []);
+
   const importLibrary = useCallback((entries: LibraryEntry[]) => {
     let user = loadUserLibrary();
     for (const e of entries) {
@@ -126,7 +132,13 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
 
       const next: Song[] = [];
       const assigned = new Set<number>();
-      const { lyricsSongs, confessionSong } = splitLyricsAndConfessionSongs(parsed.info.songs);
+      // A conti without a recognized cover page still has usable sheet music:
+      // derive the song list straight from the score pages, in page order.
+      const hasCover = parsed.info.songs.length > 0;
+      const baseSongs = hasCover
+        ? parsed.info.songs
+        : deriveSongsFromMusicPages(parsed.pageTexts, parsed.musicPages, library);
+      const { lyricsSongs, confessionSong } = splitLyricsAndConfessionSongs(baseSongs);
       const excludedPages = new Set<number>();
       if (confessionSong?.pageIndex != null) excludedPages.add(confessionSong.pageIndex);
 
@@ -159,13 +171,19 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
         }
       }
 
-      setInfo(parsed.info);
+      setInfo(hasCover ? parsed.info : null);
       setSongs(next);
       setEdited(false);
       setPageImages({});
       onDateDetected?.(parsed.info.date);
       onContiInfoDetected?.(parsed.info);
-      if (confessionSong) {
+      if (!hasCover && next.length > 0) {
+        setNotice(
+          `표지를 찾지 못해 악보 순서대로 ${next.length}곡을 정리했습니다.` +
+            (confessionSong ? ' 마지막 악보는 공동체 고백송으로 제외했어요.' : '') +
+            ' 제목과 가사를 확인해 주세요.',
+        );
+      } else if (confessionSong) {
         setNotice(`마지막 곡 '${confessionSong.title}'은 공동체 고백송으로 찬양 슬라이드에서 제외했습니다.`);
       }
 
@@ -181,8 +199,8 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
         }
       })();
 
-      if (parsed.info.songs.length === 0) {
-        setError('콘티 표지를 인식하지 못했습니다. 곡을 직접 추가해 주세요.');
+      if (next.length === 0) {
+        setError('콘티에서 곡을 찾지 못했습니다. 곡을 직접 추가해 주세요.');
       }
     } catch (e) {
       setError(`PDF를 읽는 중 오류가 발생했습니다: ${e instanceof Error ? e.message : String(e)}`);
@@ -384,6 +402,7 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
             library={library}
             onDelete={removeFromUserLibrary}
             onImport={importLibrary}
+            onAdd={addFromLibrary}
           />
         </Modal>
       )}

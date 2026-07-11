@@ -1,4 +1,4 @@
-import type { ContiInfo, ContiSongEntry } from './types';
+import type { ContiInfo, ContiSongEntry, LibraryEntry } from './types';
 import { normalizeTitle } from './library';
 
 /** `주님의 사랑 (E): 설명...` — title, musical key, description. */
@@ -113,6 +113,31 @@ export function matchSongsToPages(
       song.pageIndex = free[next++];
     }
   }
+}
+
+/**
+ * Build an ordered song list straight from the sheet-music pages, for a conti
+ * whose typed cover page is missing (or wasn't recognized). Each music page
+ * becomes one song, in page order: matched to a library entry when its title
+ * appears in the page's (OCR) text, otherwise a page-numbered stub the user
+ * can fill in while looking at the score. The final entry is still the
+ * 공동체 고백송 — callers should split it off exactly like the cover path.
+ */
+export function deriveSongsFromMusicPages(
+  pageTexts: string[],
+  musicPages: number[],
+  library: LibraryEntry[],
+): ContiSongEntry[] {
+  return musicPages.map((page) => {
+    const pageText = normalizeTitle(pageTexts[page - 1] ?? '');
+    const hit = library.find((e) => {
+      const t = normalizeTitle(e.title);
+      return t.length >= 2 && pageText.includes(t);
+    });
+    return hit
+      ? { title: hit.title, key: hit.key, pageIndex: page }
+      : { title: `새 찬양 (p.${page})`, pageIndex: page };
+  });
 }
 
 /**

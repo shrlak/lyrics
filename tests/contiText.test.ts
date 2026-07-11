@@ -3,10 +3,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   classifyPages,
+  deriveSongsFromMusicPages,
   matchSongsToPages,
   parseCoverText,
   splitLyricsAndConfessionSongs,
 } from '../src/lib/contiText';
+import type { LibraryEntry } from '../src/lib/types';
 
 const coverText = readFileSync(join(__dirname, 'fixtures', 'cover.txt'), 'utf-8');
 const notesText = readFileSync(join(__dirname, 'fixtures', 'notes.txt'), 'utf-8');
@@ -61,6 +63,33 @@ describe('matchSongsToPages', () => {
     expect(info.songs.find((s) => s.title === '주 은혜임을')?.pageIndex).toBe(4);
     expect(info.songs.find((s) => s.title === '주님의 사랑')?.pageIndex).toBe(3);
     expect(info.songs.find((s) => s.title === '입례')?.pageIndex).toBe(5);
+  });
+});
+
+describe('deriveSongsFromMusicPages', () => {
+  const library: LibraryEntry[] = [
+    { title: '주 은혜임을', key: 'F', sections: [{ label: 'C', lines: ['가사'] }], order: ['C'] },
+  ];
+
+  it('builds one song per music page, in page order', () => {
+    const pageTexts = ['garbled', '주 은혜임을 KaMU', 'garbled 2'];
+    const songs = deriveSongsFromMusicPages(pageTexts, [1, 2, 3], library);
+    expect(songs.map((s) => s.pageIndex)).toEqual([1, 2, 3]);
+  });
+
+  it('matches the library by page text and stubs the rest', () => {
+    const pageTexts = ['garbled', '주 은혜임을 KaMU', 'garbled 2'];
+    const songs = deriveSongsFromMusicPages(pageTexts, [1, 2, 3], library);
+    expect(songs[1]).toMatchObject({ title: '주 은혜임을', key: 'F', pageIndex: 2 });
+    expect(songs[0].title).toBe('새 찬양 (p.1)');
+    expect(songs[2].title).toBe('새 찬양 (p.3)');
+  });
+
+  it('splits off the last derived song as the 공동체 고백송', () => {
+    const songs = deriveSongsFromMusicPages(['a', 'b', 'c'], [1, 2, 3], library);
+    const { lyricsSongs, confessionSong } = splitLyricsAndConfessionSongs(songs);
+    expect(lyricsSongs.map((s) => s.pageIndex)).toEqual([1, 2]);
+    expect(confessionSong?.pageIndex).toBe(3);
   });
 });
 

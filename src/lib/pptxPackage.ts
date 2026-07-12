@@ -62,6 +62,17 @@ export async function stripNonVisualParts(zip: JSZip): Promise<void> {
     contentTypes = contentTypes.replace(/<Override\b[^>]*PartName="\/ppt\/(?:commentAuthors|threadedCommentAuthors|person)\.xml"[^>]*\/>/g, '');
     zip.file('[Content_Types].xml', contentTypes);
   }
+
+  // presentation.xml keeps its own pointer to the notes master; with the
+  // part and its relationship gone, that r:id dangles — which PowerPoint
+  // reports as content that needs repair even though every relationship
+  // target in the package resolves.
+  const presentationFile = zip.file('ppt/presentation.xml');
+  if (presentationFile) {
+    const presentation = await presentationFile.async('string');
+    const cleaned = presentation.replace(/<p:notesMasterIdLst>[\s\S]*?<\/p:notesMasterIdLst>|<p:notesMasterIdLst\/>/g, '');
+    if (cleaned !== presentation) zip.file('ppt/presentation.xml', cleaned);
+  }
 }
 
 function decodeTarget(value: string): string {
@@ -105,10 +116,41 @@ function resolveRelationshipTarget(relsPath: string, target: string): string {
   return normalizePartPath(`${directory}/${clean}`);
 }
 
+// Attributes in the officeDocument relationships namespace: their value must
+// match a relationship Id in the part's own .rels file. A reference without a
+// matching Id ("dangling") makes PowerPoint prompt to repair the file.
+const RELATIONSHIP_REF = /\br:(?:id|embed|link|pict|dm|lo|qs|cs|href)="([^"]+)"/g;
+
 /** Return every broken internal package relationship with a useful location. */
 export async function findBrokenRelationships(zip: JSZip): Promise<string[]> {
   const errors: string[] = [];
   const relPaths = Object.keys(zip.files).filter((path) => path.endsWith('.rels'));
+
+  const xmlPaths = Object.keys(zip.files).filter(
+    (path) => path.endsWith('.xml') && !path.endsWith('.rels') && !zip.files[path].dir,
+  );
+  for (const path of xmlPaths) {
+    const xml = await zip.file(path)!.async('string');
+    const refs = new Set<string>();
+    for (const match of xml.matchAll(RELATIONSHIP_REF)) {
+      if (match[1]) refs.add(match[1]);
+    }
+    if (refs.size === 0) continue;
+
+    const directory = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    const relsPath = directory ? `${directory}/_rels/${path.slice(directory.length + 1)}.rels` : `_rels/${path}.rels`;
+    const ids = new Set<string>();
+    const relsFile = zip.file(relsPath);
+    if (relsFile) {
+      for (const match of (await relsFile.async('string')).matchAll(/<Relationship\b[^>]*\/>/g)) {
+        const id = attr(match[0], 'Id');
+        if (id) ids.add(id);
+      }
+    }
+    for (const ref of refs) {
+      if (!ids.has(ref)) errors.push(`${path}: dangling relationship reference ${ref} (not in ${relsPath})`);
+    }
+  }
 
   for (const relsPath of relPaths) {
     const owner = relationshipOwner(relsPath);

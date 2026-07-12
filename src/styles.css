@@ -585,6 +585,15 @@ body::before {
   resize: vertical;
   font-size: 0.94rem;
 }
+.section-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.section-controls .btn-icon {
+  padding: 4px 8px;
+  font-size: 0.78rem;
+}
 
 .quick-add {
   display: flex;
@@ -644,28 +653,62 @@ body::before {
   border-radius: var(--radius-sm);
   align-items: center;
 }
+/* Mirrors the real deck's 4:3 slide canvas (public/template.pptx: sldSz
+   9144000x6858000, white lyrics slides with a small corner title label,
+   bold centered title-slide text) so the preview matches the export. */
 .mini-slide {
   flex: none;
   width: 126px;
-  height: 92px;
-  border-radius: 9px;
+  aspect-ratio: 4 / 3;
+  border-radius: 7px;
   border: 1px solid var(--hairline);
-  padding: 8px 6px;
-  font-size: 0.55rem;
   overflow: hidden;
+  position: relative;
+  background: #fff;
+  color: #17181c;
+}
+.mini-slide-label {
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  right: 6px;
+  font-size: 0.4rem;
+  font-weight: 600;
+  color: #17181c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-slide-lines {
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
+  padding: 13px 7px 4px;
+  font-size: 0.5rem;
+  line-height: 1.2;
   text-align: center;
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--ink);
+  overflow: hidden;
 }
 .mini-slide.title {
   background: var(--grad);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  text-align: center;
+}
+.mini-slide-title {
   color: #06070c;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .preview-count {
   flex: none;

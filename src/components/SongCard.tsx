@@ -74,6 +74,14 @@ export default function SongCard({
     onChange({ ...song, sections: song.sections.filter((_, idx) => idx !== i) });
   }
 
+  function moveSection(i: number, delta: -1 | 1) {
+    const j = i + delta;
+    if (j < 0 || j >= song.sections.length) return;
+    const sections = [...song.sections];
+    [sections[i], sections[j]] = [sections[j], sections[i]];
+    onChange({ ...song, sections });
+  }
+
   return (
     <div className="song-card" data-testid="song-card">
       <div className="song-card-head">
@@ -170,9 +178,27 @@ export default function SongCard({
                 value={sec.lines.join('\n')}
                 onChange={(e) => setSection(i, { text: e.target.value })}
               />
-              <button className="btn btn-icon" title="파트 삭제" onClick={() => removeSection(i)}>
-                ✕
-              </button>
+              <div className="section-controls">
+                <button
+                  className="btn btn-icon"
+                  disabled={i === 0}
+                  title="파트를 위로 이동"
+                  onClick={() => moveSection(i, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  className="btn btn-icon"
+                  disabled={i === song.sections.length - 1}
+                  title="파트를 아래로 이동"
+                  onClick={() => moveSection(i, 1)}
+                >
+                  ↓
+                </button>
+                <button className="btn btn-icon" title="파트 삭제" onClick={() => removeSection(i)}>
+                  ✕
+                </button>
+              </div>
             </div>
           ))}
           <div className="quick-add">
@@ -243,9 +269,16 @@ export default function SongCard({
         {plans.map((p, i) => (
           <div key={i} className={`mini-slide ${p.kind}`}>
             {p.kind === 'title' ? (
-              <strong>{p.title || '제목'}</strong>
+              <strong className="mini-slide-title">{p.title || '제목'}</strong>
             ) : (
-              p.lines?.map((l, j) => <div key={j}>{l}</div>)
+              <>
+                <span className="mini-slide-label">{p.title}</span>
+                <div className="mini-slide-lines">
+                  {p.lines?.map((l, j) => (
+                    <div key={j}>{l}</div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         ))}

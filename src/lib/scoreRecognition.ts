@@ -39,12 +39,22 @@ async function recognizeWithEngine(
   throw new Error('자동 인식이 꺼져 있습니다.');
 }
 
-/** Run the configured recognition engine on one score image, with automatic fallback. */
+export interface RecognitionResult {
+  score: ParsedScore;
+  /** Which engine actually produced the result, so the UI can say so. */
+  engine: RecognitionEngine;
+}
+
+/**
+ * Run recognition on one score image in priority order — Gemini, then
+ * Hugging Face, then on-device Tesseract OCR (per DEFAULT_AI_SETTINGS) —
+ * falling through to the next engine whenever one fails or is unavailable.
+ */
 export async function recognizeScore(
   dataUrl: string,
   settings: AiSettings,
   onProgress?: OcrProgress,
-): Promise<ParsedScore> {
+): Promise<RecognitionResult> {
   const engines = [settings.engine, ...settings.fallbackEngines].filter((e) => e !== 'off');
   if (engines.length === 0) {
     throw new Error('자동 인식이 꺼져 있습니다.');
@@ -53,7 +63,7 @@ export async function recognizeScore(
   let lastError: Error | null = null;
   for (const engine of engines) {
     try {
-      return await recognizeWithEngine(engine, dataUrl, settings, onProgress);
+      return { score: await recognizeWithEngine(engine, dataUrl, settings, onProgress), engine };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.warn(`${engine} 인식 실패, 다음 엔진 시도:`, lastError.message);

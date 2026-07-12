@@ -1,7 +1,16 @@
-import { describe, expect, it } from 'vitest';
-import { applyScoreToSong } from '../src/lib/scoreRecognition';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { applyScoreToSong, recognizeScore } from '../src/lib/scoreRecognition';
+import { DEFAULT_AI_SETTINGS } from '../src/lib/aiSettings';
 import type { Song } from '../src/lib/types';
 import type { ParsedScore } from '../src/lib/scoreParser';
+
+vi.mock('../src/lib/scoreAi', () => ({ recognizeWithGemini: vi.fn() }));
+vi.mock('../src/lib/scoreHuggingFace', () => ({ recognizeWithHuggingFace: vi.fn() }));
+vi.mock('../src/lib/scoreOcr', () => ({ recognizeWithTesseract: vi.fn() }));
+
+import { recognizeWithGemini } from '../src/lib/scoreAi';
+import { recognizeWithHuggingFace } from '../src/lib/scoreHuggingFace';
+import { recognizeWithTesseract } from '../src/lib/scoreOcr';
 
 const stub: Song = {
   id: '1',
@@ -21,6 +30,44 @@ const parsed: ParsedScore = {
     { label: 'C', lines: ['후렴 줄'] },
   ],
 };
+
+describe('recognizeScore engine priority', () => {
+  const settings = { ...DEFAULT_AI_SETTINGS, geminiApiKey: 'test-key', huggingfaceApiKey: 'test-key' };
+  const result: ParsedScore = { title: 't', key: 'C', order: [], sections: [] };
+
+  beforeEach(() => {
+    vi.mocked(recognizeWithGemini).mockReset();
+    vi.mocked(recognizeWithHuggingFace).mockReset();
+    vi.mocked(recognizeWithTesseract).mockReset();
+  });
+
+  it('uses Gemini first and reports it as the engine', async () => {
+    vi.mocked(recognizeWithGemini).mockResolvedValue(result);
+    const out = await recognizeScore('data:image/png;base64,x', settings);
+    expect(out.engine).toBe('gemini');
+    expect(recognizeWithGemini).toHaveBeenCalledTimes(1);
+    expect(recognizeWithHuggingFace).not.toHaveBeenCalled();
+    expect(recognizeWithTesseract).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Hugging Face when Gemini fails', async () => {
+    vi.mocked(recognizeWithGemini).mockRejectedValue(new Error('quota'));
+    vi.mocked(recognizeWithHuggingFace).mockResolvedValue(result);
+    const out = await recognizeScore('data:image/png;base64,x', settings);
+    expect(out.engine).toBe('huggingface');
+    expect(recognizeWithTesseract).not.toHaveBeenCalled();
+  });
+
+  it('falls back to browser OCR only when both AI engines fail', async () => {
+    vi.mocked(recognizeWithGemini).mockRejectedValue(new Error('down'));
+    vi.mocked(recognizeWithHuggingFace).mockRejectedValue(new Error('down'));
+    vi.mocked(recognizeWithTesseract).mockResolvedValue(result);
+    const out = await recognizeScore('data:image/png;base64,x', settings);
+    expect(out.engine).toBe('tesseract');
+    expect(recognizeWithGemini).toHaveBeenCalledTimes(1);
+    expect(recognizeWithHuggingFace).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('applyScoreToSong', () => {
   it('fills a blank stub with the recognized title, key, order and sections', () => {

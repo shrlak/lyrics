@@ -92,12 +92,12 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
     setRecog((r) => ({ ...r, [songId]: { status: 'running', progress: 0 } }));
     try {
       const image = await doc.renderPage(pageIndex, 1240);
-      const parsed = await recognizeScore(image, DEFAULT_AI_SETTINGS, (p) => {
+      const { score, engine } = await recognizeScore(image, DEFAULT_AI_SETTINGS, (p) => {
         if (!cancelled()) setRecog((r) => ({ ...r, [songId]: { status: 'running', progress: p } }));
       });
       if (cancelled()) return;
-      setSongs((list) => list.map((s) => (s.id === songId ? applyScoreToSong(s, parsed) : s)));
-      setRecog((r) => ({ ...r, [songId]: { status: 'done' } }));
+      setSongs((list) => list.map((s) => (s.id === songId ? applyScoreToSong(s, score) : s)));
+      setRecog((r) => ({ ...r, [songId]: { status: 'done', engine } }));
     } catch (e) {
       if (cancelled()) return;
       setRecog((r) => ({

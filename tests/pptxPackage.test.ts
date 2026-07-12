@@ -18,6 +18,30 @@ describe('pptx package integrity', () => {
     expect(await findBrokenRelationships(zip)).toEqual([]);
   });
 
+  it('removes the notes master reference from presentation.xml along with the part', async () => {
+    const zip = await JSZip.loadAsync(frontSlides);
+    expect(await zip.file('ppt/presentation.xml')!.async('string')).toContain('<p:notesMasterIdLst>');
+
+    await stripNonVisualParts(zip);
+
+    // Leaving <p:notesMasterId r:id="..."/> behind after its relationship is
+    // stripped makes PowerPoint prompt to repair the downloaded file.
+    expect(await zip.file('ppt/presentation.xml')!.async('string')).not.toContain('notesMasterIdLst');
+  });
+
+  it('reports relationship references that have no matching relationship entry', async () => {
+    const zip = await JSZip.loadAsync(frontSlides);
+    await stripNonVisualParts(zip);
+    const presentation = await zip.file('ppt/presentation.xml')!.async('string');
+    zip.file(
+      'ppt/presentation.xml',
+      presentation.replace('</p:presentation>', '<p:notesMasterIdLst><p:notesMasterId r:id="rId999"/></p:notesMasterIdLst></p:presentation>'),
+    );
+
+    const errors = await findBrokenRelationships(zip);
+    expect(errors.some((e) => e.includes('dangling relationship reference rId999'))).toBe(true);
+  });
+
   it('accepts a sanitized standalone deck', async () => {
     const zip = await JSZip.loadAsync(frontSlides);
     await stripNonVisualParts(zip);

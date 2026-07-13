@@ -9,7 +9,15 @@ export interface RecogState {
   status: 'running' | 'done' | 'error';
   progress?: number;
   message?: string;
+  /** Engine that produced the result: 'gemini' | 'huggingface' | 'tesseract'. */
+  engine?: string;
 }
+
+const ENGINE_LABELS: Record<string, string> = {
+  gemini: 'Gemini',
+  huggingface: 'Hugging Face',
+  tesseract: '브라우저 OCR',
+};
 
 interface Props {
   song: Song;
@@ -152,7 +160,12 @@ export default function SongCard({
                         {recog.message && <span className="recog-error-detail">{recog.message}</span>}
                       </span>
                     )}
-                    {recog?.status === 'done' && <span className="recog-done">✓ 인식 완료 · 확인해 주세요</span>}
+                    {recog?.status === 'done' && (
+                      <span className="recog-done">
+                        ✓ {recog.engine ? `${ENGINE_LABELS[recog.engine] ?? recog.engine}로 ` : ''}인식 완료 · 확인해
+                        주세요
+                      </span>
+                    )}
                   </>
                 )}
               </div>

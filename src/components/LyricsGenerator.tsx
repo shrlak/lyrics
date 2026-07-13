@@ -15,7 +15,7 @@ import SongCard, { type RecogState } from './SongCard';
 import Modal from './Modal';
 import LibraryManager from './LibraryManager';
 import LibraryAddSearch from './LibraryAddSearch';
-import { DEFAULT_AI_SETTINGS } from '../lib/aiSettings';
+import { getAiSettings } from '../lib/aiSettings';
 import { applyScoreToSong, recognizeScore } from '../lib/scoreRecognition';
 import { showToast } from '../lib/toast';
 
@@ -92,7 +92,7 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
     setRecog((r) => ({ ...r, [songId]: { status: 'running', progress: 0 } }));
     try {
       const image = await doc.renderPage(pageIndex, 1240);
-      const { score, engine } = await recognizeScore(image, DEFAULT_AI_SETTINGS, (p) => {
+      const { score, engine } = await recognizeScore(image, getAiSettings(), (p) => {
         if (!cancelled()) setRecog((r) => ({ ...r, [songId]: { status: 'running', progress: p } }));
       });
       if (cancelled()) return;
@@ -115,6 +115,16 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
     },
     [recognizeSong],
   );
+
+  /** Stop an accidentally started scan: discard its result and reset the card. */
+  const cancelRecognition = useCallback((song: Song) => {
+    scanCancelledRef.current.add(song.id);
+    autoAttemptedRef.current.add(song.id);
+    setRecog((r) => {
+      const { [song.id]: _dropped, ...rest } = r;
+      return rest;
+    });
+  }, []);
 
   /**
    * Fill a lyric-less song from the library when its title is already known
@@ -435,6 +445,7 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
             pageImage={song.pageIndex != null ? pageImages[song.pageIndex] : undefined}
             recog={recog[song.id]}
             onRecognize={song.pageIndex != null ? () => handleRecognizeClick(song) : undefined}
+            onCancelRecognize={() => cancelRecognition(song)}
             onChange={updateSong}
             onMove={moveSong}
             onRemove={removeSong}

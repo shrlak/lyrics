@@ -230,6 +230,31 @@ body {
 .admin-lock .btn {
   align-self: flex-start;
 }
+.admin-recognition {
+  align-items: flex-start;
+}
+.admin-engine-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.admin-engine {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.admin-engine-label {
+  min-width: 220px;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.admin-engine-actions {
+  display: flex;
+  gap: 4px;
+}
 .header-scrolled .header-inner {
   padding-top: 16px;
   padding-bottom: 12px;

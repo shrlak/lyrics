@@ -4,7 +4,19 @@
 import { useEffect, useRef, useState } from 'react';
 import Modal from './Modal';
 import { clearCustomDeck, getCustomDeck, setCustomDeck, type DeckSlot, type StoredDeck } from '../lib/deckStore';
+import {
+  DEFAULT_RECOGNITION_ORDER,
+  loadRecognitionOrder,
+  saveRecognitionOrder,
+  type RecognitionEngine,
+} from '../lib/aiSettings';
 import { showToast } from '../lib/toast';
+
+const ENGINE_LABELS: Record<string, string> = {
+  gemini: 'Gemini',
+  huggingface: 'Hugging Face',
+  tesseract: '브라우저 OCR (Tesseract)',
+};
 
 interface Props {
   onClose: () => void;
@@ -191,6 +203,73 @@ export default function AdminPanel({ onClose, onDeckChange }: Props) {
       {SLOTS.map(({ slot, label, description }) => (
         <DeckSlotRow key={slot} slot={slot} label={label} description={description} onDeckChange={onDeckChange} />
       ))}
+      <RecognitionOrderSection />
     </Modal>
+  );
+}
+
+function RecognitionOrderSection() {
+  const [order, setOrder] = useState<RecognitionEngine[]>(() => loadRecognitionOrder());
+  const isDefault = order.join() === DEFAULT_RECOGNITION_ORDER.join();
+
+  function move(index: number, delta: -1 | 1) {
+    const to = index + delta;
+    if (to < 0 || to >= order.length) return;
+    const next = order.slice();
+    [next[index], next[to]] = [next[to], next[index]];
+    saveRecognitionOrder(next);
+    setOrder(next);
+  }
+
+  function reset() {
+    saveRecognitionOrder(DEFAULT_RECOGNITION_ORDER);
+    setOrder([...DEFAULT_RECOGNITION_ORDER]);
+  }
+
+  return (
+    <section className="admin-deck admin-recognition" data-testid="admin-recognition-order">
+      <div className="admin-deck-info">
+        <h4>가사 인식 AI 순서</h4>
+        <p>위에서부터 차례로 시도하고, 실패하면 다음 엔진으로 넘어갑니다.</p>
+        <ol className="admin-engine-list">
+          {order.map((engine, index) => (
+            <li key={engine} className="admin-engine" data-testid={`admin-engine-${engine}`}>
+              <span className="admin-engine-label">
+                {index + 1}. {ENGINE_LABELS[engine] ?? engine}
+              </span>
+              <span className="admin-engine-actions">
+                <button
+                  type="button"
+                  className="btn btn-chip"
+                  aria-label={`${ENGINE_LABELS[engine] ?? engine} 순서 올리기`}
+                  data-testid={`admin-engine-up-${engine}`}
+                  disabled={index === 0}
+                  onClick={() => move(index, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-chip"
+                  aria-label={`${ENGINE_LABELS[engine] ?? engine} 순서 내리기`}
+                  data-testid={`admin-engine-down-${engine}`}
+                  disabled={index === order.length - 1}
+                  onClick={() => move(index, 1)}
+                >
+                  ↓
+                </button>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+      <div className="admin-deck-actions">
+        {!isDefault && (
+          <button type="button" className="btn" data-testid="admin-engine-reset" onClick={reset}>
+            기본 순서로
+          </button>
+        )}
+      </div>
+    </section>
   );
 }

@@ -26,6 +26,7 @@ interface Props {
   pageImage?: string;
   recog?: RecogState;
   onRecognize?: () => void;
+  onCancelRecognize?: () => void;
   onChange: (song: Song) => void;
   onMove: (id: string, delta: -1 | 1) => void;
   onRemove: (id: string) => void;
@@ -43,6 +44,7 @@ export default function SongCard({
   pageImage,
   recog,
   onRecognize,
+  onCancelRecognize,
   onChange,
   onMove,
   onRemove,
@@ -148,6 +150,16 @@ export default function SongCard({
                       가사 인식 중…
                       {typeof recog.progress === 'number' ? ` ${Math.round(recog.progress * 100)}%` : ''}
                     </span>
+                    {onCancelRecognize && (
+                      <button
+                        type="button"
+                        className="btn btn-chip"
+                        data-testid="recognize-stop"
+                        onClick={onCancelRecognize}
+                      >
+                        중지
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <>

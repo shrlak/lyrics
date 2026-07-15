@@ -69,6 +69,22 @@ describe('pptx package integrity', () => {
     await expect(assertPptxIntegrity(data)).resolves.toBeUndefined();
   });
 
+  it('rejects slide-layout ids reused by more than one slide master', async () => {
+    const zip = await JSZip.loadAsync(frontSlides);
+    await stripNonVisualParts(zip);
+    zip.file(
+      'ppt/slideMasters/duplicate.xml',
+      await zip.file('ppt/slideMasters/slideMaster1.xml')!.async('string'),
+    );
+    zip.file(
+      'ppt/slideMasters/_rels/duplicate.xml.rels',
+      await zip.file('ppt/slideMasters/_rels/slideMaster1.xml.rels')!.async('string'),
+    );
+    const data = await zip.generateAsync({ type: 'uint8array' });
+
+    await expect(assertPptxIntegrity(data)).rejects.toThrow('duplicate slide-layout id');
+  });
+
   it('rejects a package with a missing internal relationship target', async () => {
     const zip = await JSZip.loadAsync(frontSlides);
     zip.remove('ppt/slideLayouts/slideLayout1.xml');

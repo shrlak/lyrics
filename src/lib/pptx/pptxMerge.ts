@@ -43,7 +43,51 @@ function resolveRelTarget(relsXml: string, rId: string): string | null {
 }
 
 function xmlAttr(tag: string, name: string): string | null {
-  return tag.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? null;
+  return tag.match(new RegExp(`\\s${escapeRegExp(name)}="([^"]*)"`))?.[1] ?? null;
+}
+
+function setXmlAttr(tag: string, name: string, value: string): string {
+  const re = new RegExp(`(\\s)${escapeRegExp(name)}="[^"]*"`);
+  return re.test(tag) ? tag.replace(re, `$1${name}="${value}"`) : tag;
+}
+
+/**
+ * A slide-layout id must be unique across the whole presentation, not merely
+ * inside its own slide master. Standalone decks commonly reuse the same ids,
+ * so copying their masters verbatim creates a package that PowerPoint repairs.
+ * The ids are not relationship keys; slides resolve layouts through r:id, so
+ * assigning a fresh presentation-wide sequence is safe and preserves visuals.
+ */
+async function normalizeSlideLayoutIds(
+  zip: JSZip,
+  presentationXml: string,
+  presentationRels: string,
+): Promise<void> {
+  const masterPaths: string[] = [];
+  const seen = new Set<string>();
+  for (const match of presentationXml.matchAll(/<p:sldMasterId\b[^>]*>/g)) {
+    const rId = xmlAttr(match[0], 'r:id');
+    const target = rId ? resolveRelTarget(presentationRels, rId) : null;
+    if (target?.startsWith('slideMasters/')) {
+      const path = `ppt/${target}`;
+      masterPaths.push(path);
+      seen.add(path);
+    }
+  }
+  for (const path of Object.keys(zip.files).sort()) {
+    if (/^ppt\/slideMasters\/[^/]+\.xml$/.test(path) && !seen.has(path)) masterPaths.push(path);
+  }
+
+  let nextLayoutId = 2147483648;
+  for (const path of masterPaths) {
+    const file = zip.file(path);
+    if (!file) continue;
+    const xml = await file.async('string');
+    const normalized = xml.replace(/<p:sldLayoutId\b[^>]*>/g, (tag) =>
+      setXmlAttr(tag, 'id', String(nextLayoutId++)),
+    );
+    if (normalized !== xml) zip.file(path, normalized);
+  }
 }
 
 const SUPPORT_DIRS = [
@@ -231,6 +275,8 @@ export async function mergePptxDecks(
     );
     presentation = presentation.replace('</p:sldIdLst>', `<p:sldId id="${id}" r:id="${rid}"/></p:sldIdLst>`);
   }
+
+  await normalizeSlideLayoutIds(baseP.zip, presentation, presRels);
 
   baseP.zip.file('[Content_Types].xml', contentTypes);
   baseP.zip.file('ppt/presentation.xml', presentation);

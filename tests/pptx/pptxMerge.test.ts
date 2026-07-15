@@ -43,6 +43,16 @@ function slideFiles(zip: JSZip): string[] {
   return Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f));
 }
 
+async function slideLayoutIds(zip: JSZip): Promise<string[]> {
+  const masters = Object.keys(zip.files).filter((f) => /^ppt\/slideMasters\/[^/]+\.xml$/.test(f));
+  const ids: string[] = [];
+  for (const path of masters) {
+    const xml = await zip.file(path)!.async('string');
+    ids.push(...[...xml.matchAll(/<p:sldLayoutId\b[^>]*\sid="([^"]+)"/g)].map((match) => match[1]));
+  }
+  return ids;
+}
+
 describe('mergePptxDecks', () => {
   it('appends the second deck\'s slides after the first, preserving both texts', async () => {
     const lyricsDeck = await buildPptx(lyricsTemplate, songs);
@@ -122,6 +132,17 @@ describe('mergePptxDecks', () => {
     for (const path of slideFiles(zip)) {
       expect(contentTypes).toContain(`PartName="/${path}"`);
     }
+  });
+
+  it('renumbers copied slide-layout ids so they are unique across every master', async () => {
+    const once = await mergePptxDecks(frontSlides, backSlides, 'STORE');
+    const twice = await mergePptxDecks(once, frontSlides);
+    const zip = await JSZip.loadAsync(twice);
+    const ids = await slideLayoutIds(zip);
+
+    expect(ids.length).toBeGreaterThan(1);
+    expect(new Set(ids).size).toBe(ids.length);
+    await expect(assertPptxIntegrity(twice)).resolves.toBeUndefined();
   });
 
   it('throws when the addition deck has no slides', async () => {

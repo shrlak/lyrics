@@ -24,7 +24,7 @@ const DISCARD_REL_KIND =
   /\/(?:notesSlide|notesMaster|comments?|commentAuthors?|threadedComments?|threadedCommentAuthors?|person|tags|slideUpdateInfo|presentationmetadata)$/i;
 
 function attr(tag: string, name: string): string | null {
-  return tag.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? null;
+  return tag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1] ?? null;
 }
 
 function isDiscardedPart(path: string): boolean {
@@ -236,6 +236,24 @@ export async function assertPptxIntegrity(data: ArrayBuffer | Uint8Array): Promi
   const listedSlides = presentation.match(/<p:sldId\b/g)?.length ?? 0;
   if (listedSlides !== slideFiles.length) {
     errors.push(`presentation lists ${listedSlides} slides but package contains ${slideFiles.length}`);
+  }
+
+  // ISO/IEC 29500 requires every slide-layout id to identify a layout uniquely
+  // within the presentation. Decks produced independently often reuse the
+  // same range; a merge must renumber them or desktop PowerPoint repairs it.
+  const layoutIdOwners = new Map<string, string>();
+  const masterFiles = Object.keys(zip.files).filter(
+    (path) => /^ppt\/slideMasters\/[^/]+\.xml$/.test(path) && !zip.files[path].dir,
+  );
+  for (const path of masterFiles) {
+    const master = await zip.file(path)!.async('string');
+    for (const match of master.matchAll(/<p:sldLayoutId\b[^>]*>/g)) {
+      const id = attr(match[0], 'id');
+      if (!id) continue;
+      const previous = layoutIdOwners.get(id);
+      if (previous) errors.push(`${path}: duplicate slide-layout id ${id} (also in ${previous})`);
+      else layoutIdOwners.set(id, path);
+    }
   }
 
   const contentTypes = await zip.file('[Content_Types].xml')!.async('string');

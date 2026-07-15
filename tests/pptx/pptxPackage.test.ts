@@ -82,7 +82,23 @@ describe('pptx package integrity', () => {
     );
     const data = await zip.generateAsync({ type: 'uint8array' });
 
-    await expect(assertPptxIntegrity(data)).rejects.toThrow('duplicate slide-layout id');
+    await expect(assertPptxIntegrity(data)).rejects.toThrow('duplicate slide-master/layout id');
+  });
+
+  it('rejects a slide master whose id collides with one of its layout ids', async () => {
+    const zip = await JSZip.loadAsync(frontSlides);
+    await stripNonVisualParts(zip);
+    const master = await zip.file('ppt/slideMasters/slideMaster1.xml')!.async('string');
+    const layoutId = master.match(/<p:sldLayoutId\b[^>]*\sid="([^"]+)"/)?.[1];
+    expect(layoutId).toBeTruthy();
+    const presentation = await zip.file('ppt/presentation.xml')!.async('string');
+    zip.file(
+      'ppt/presentation.xml',
+      presentation.replace(/(<p:sldMasterId\b[^>]*\sid=")[^"]+/, `$1${layoutId}`),
+    );
+    const data = await zip.generateAsync({ type: 'uint8array' });
+
+    await expect(assertPptxIntegrity(data)).rejects.toThrow('duplicate slide-master/layout id');
   });
 
   it('rejects a package with a missing internal relationship target', async () => {

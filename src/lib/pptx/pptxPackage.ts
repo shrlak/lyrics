@@ -238,10 +238,19 @@ export async function assertPptxIntegrity(data: ArrayBuffer | Uint8Array): Promi
     errors.push(`presentation lists ${listedSlides} slides but package contains ${slideFiles.length}`);
   }
 
-  // ISO/IEC 29500 requires every slide-layout id to identify a layout uniquely
-  // within the presentation. Decks produced independently often reuse the
-  // same range; a merge must renumber them or desktop PowerPoint repairs it.
-  const layoutIdOwners = new Map<string, string>();
+  // Slide-master and slide-layout ids share a presentation-wide id namespace.
+  // Decks produced independently often reuse the same range; a merge must
+  // renumber both kinds together or desktop PowerPoint repairs the package.
+  const masterAndLayoutIdOwners = new Map<string, string>();
+  for (const match of presentation.matchAll(/<p:sldMasterId\b[^>]*>/g)) {
+    const id = attr(match[0], 'id');
+    if (!id) continue;
+    const owner = `ppt/presentation.xml slide master ${attr(match[0], 'r:id') ?? '(unknown relationship)'}`;
+    const previous = masterAndLayoutIdOwners.get(id);
+    if (previous) errors.push(`${owner}: duplicate slide-master/layout id ${id} (also in ${previous})`);
+    else masterAndLayoutIdOwners.set(id, owner);
+  }
+
   const masterFiles = Object.keys(zip.files).filter(
     (path) => /^ppt\/slideMasters\/[^/]+\.xml$/.test(path) && !zip.files[path].dir,
   );
@@ -250,9 +259,9 @@ export async function assertPptxIntegrity(data: ArrayBuffer | Uint8Array): Promi
     for (const match of master.matchAll(/<p:sldLayoutId\b[^>]*>/g)) {
       const id = attr(match[0], 'id');
       if (!id) continue;
-      const previous = layoutIdOwners.get(id);
-      if (previous) errors.push(`${path}: duplicate slide-layout id ${id} (also in ${previous})`);
-      else layoutIdOwners.set(id, path);
+      const previous = masterAndLayoutIdOwners.get(id);
+      if (previous) errors.push(`${path}: duplicate slide-master/layout id ${id} (also in ${previous})`);
+      else masterAndLayoutIdOwners.set(id, path);
     }
   }
 

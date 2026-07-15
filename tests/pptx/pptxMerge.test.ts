@@ -53,6 +53,14 @@ async function slideLayoutIds(zip: JSZip): Promise<string[]> {
   return ids;
 }
 
+async function slideMasterAndLayoutIds(zip: JSZip): Promise<string[]> {
+  const presentation = await zip.file('ppt/presentation.xml')!.async('string');
+  const masterIds = [...presentation.matchAll(/<p:sldMasterId\b[^>]*\sid="([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  return [...masterIds, ...(await slideLayoutIds(zip))];
+}
+
 describe('mergePptxDecks', () => {
   it('appends the second deck\'s slides after the first, preserving both texts', async () => {
     const lyricsDeck = await buildPptx(lyricsTemplate, songs);
@@ -134,11 +142,11 @@ describe('mergePptxDecks', () => {
     }
   });
 
-  it('renumbers copied slide-layout ids so they are unique across every master', async () => {
+  it('renumbers slide-master and slide-layout ids in one unique presentation-wide sequence', async () => {
     const once = await mergePptxDecks(frontSlides, backSlides, 'STORE');
     const twice = await mergePptxDecks(once, frontSlides);
     const zip = await JSZip.loadAsync(twice);
-    const ids = await slideLayoutIds(zip);
+    const ids = await slideMasterAndLayoutIds(zip);
 
     expect(ids.length).toBeGreaterThan(1);
     expect(new Set(ids).size).toBe(ids.length);

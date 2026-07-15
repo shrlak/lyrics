@@ -52,18 +52,18 @@ function setXmlAttr(tag: string, name: string, value: string): string {
 }
 
 /**
- * A slide-layout id must be unique across the whole presentation, not merely
- * inside its own slide master. Standalone decks commonly reuse the same ids,
- * so copying their masters verbatim creates a package that PowerPoint repairs.
- * The ids are not relationship keys; slides resolve layouts through r:id, so
- * assigning a fresh presentation-wide sequence is safe and preserves visuals.
+ * Slide-master and slide-layout ids share one presentation-wide id space.
+ * Standalone decks commonly start that sequence over, so copying their
+ * masters verbatim creates collisions that desktop PowerPoint repairs.
+ * These ids are not relationship keys; masters and layouts resolve through
+ * r:id, so assigning one fresh sequence is safe and preserves visuals.
  */
-async function normalizeSlideLayoutIds(
+async function normalizeSlideMasterAndLayoutIds(
   zip: JSZip,
   presentationXml: string,
   presentationRels: string,
-): Promise<void> {
-  const masterPaths: string[] = [];
+): Promise<string> {
+  const masterPaths: Array<string | null> = [];
   const seen = new Set<string>();
   for (const match of presentationXml.matchAll(/<p:sldMasterId\b[^>]*>/g)) {
     const rId = xmlAttr(match[0], 'r:id');
@@ -72,22 +72,45 @@ async function normalizeSlideLayoutIds(
       const path = `ppt/${target}`;
       masterPaths.push(path);
       seen.add(path);
-    }
-  }
-  for (const path of Object.keys(zip.files).sort()) {
-    if (/^ppt\/slideMasters\/[^/]+\.xml$/.test(path) && !seen.has(path)) masterPaths.push(path);
+    } else masterPaths.push(null);
   }
 
-  let nextLayoutId = 2147483648;
+  const unreferencedMasterPaths: string[] = [];
+  for (const path of Object.keys(zip.files).sort()) {
+    if (/^ppt\/slideMasters\/[^/]+\.xml$/.test(path) && !seen.has(path)) unreferencedMasterPaths.push(path);
+  }
+
+  let nextId = 2147483648;
+  const masterIds: string[] = [];
   for (const path of masterPaths) {
+    masterIds.push(String(nextId++));
+    if (!path) continue;
     const file = zip.file(path);
     if (!file) continue;
     const xml = await file.async('string');
     const normalized = xml.replace(/<p:sldLayoutId\b[^>]*>/g, (tag) =>
-      setXmlAttr(tag, 'id', String(nextLayoutId++)),
+      setXmlAttr(tag, 'id', String(nextId++)),
     );
     if (normalized !== xml) zip.file(path, normalized);
   }
+
+  // A valid presentation should not contain unreferenced masters, but keeping
+  // their layout ids out of the used range makes the normalizer defensive and
+  // lets the package validator report the actual relationship problem.
+  for (const path of unreferencedMasterPaths) {
+    const file = zip.file(path);
+    if (!file) continue;
+    const xml = await file.async('string');
+    const normalized = xml.replace(/<p:sldLayoutId\b[^>]*>/g, (tag) =>
+      setXmlAttr(tag, 'id', String(nextId++)),
+    );
+    if (normalized !== xml) zip.file(path, normalized);
+  }
+
+  let masterIndex = 0;
+  return presentationXml.replace(/<p:sldMasterId\b[^>]*>/g, (tag) =>
+    setXmlAttr(tag, 'id', masterIds[masterIndex++] ?? String(nextId++)),
+  );
 }
 
 const SUPPORT_DIRS = [
@@ -276,7 +299,7 @@ export async function mergePptxDecks(
     presentation = presentation.replace('</p:sldIdLst>', `<p:sldId id="${id}" r:id="${rid}"/></p:sldIdLst>`);
   }
 
-  await normalizeSlideLayoutIds(baseP.zip, presentation, presRels);
+  presentation = await normalizeSlideMasterAndLayoutIds(baseP.zip, presentation, presRels);
 
   baseP.zip.file('[Content_Types].xml', contentTypes);
   baseP.zip.file('ppt/presentation.xml', presentation);

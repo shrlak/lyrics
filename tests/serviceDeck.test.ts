@@ -66,21 +66,27 @@ function slideFiles(zip: JSZip): string[] {
 }
 
 describe('complete service deck', () => {
+  // Chains 9 real PPTX merges (JSZip parse/renumber/repack each time); on a
+  // loaded CI runner this comfortably exceeds vitest's 5000ms default.
   it('keeps the mandatory sequence and produces a repair-free PPTX package', async () => {
+    // Matches the real download flow in App.tsx: intermediate merges pack with
+    // STORE (cheap, skips re-DEFLATE on every step of the growing package) and
+    // only the final merge (adding the mandatory back slides) uses DEFLATE.
     let deck: Uint8Array<ArrayBufferLike> = new Uint8Array(frontSlides);
-    deck = await mergePptxDecks(deck, await buildPptx(lyricsTemplate, [song, alternateSong]));
-    deck = await mergePptxDecks(deck, await extractSlideSubset(serviceTemplate, [17]));
-    deck = await mergePptxDecks(deck, await buildBiblePptx(bibleTemplate, biblePlan));
+    deck = await mergePptxDecks(deck, await buildPptx(lyricsTemplate, [song, alternateSong]), 'STORE');
+    deck = await mergePptxDecks(deck, await extractSlideSubset(serviceTemplate, [17]), 'STORE');
+    deck = await mergePptxDecks(deck, await buildBiblePptx(bibleTemplate, biblePlan), 'STORE');
     // Simulates a separately authored sermon PPTX uploaded by the user. Its
     // master/layout ids start in the same range as the other source decks.
-    deck = await mergePptxDecks(deck, await extractSlideSubset(serviceTemplate, [42]));
-    deck = await mergePptxDecks(deck, await extractSlideSubset(serviceTemplate, [31]));
-    deck = await mergePptxDecks(deck, await extractSlideSubset(serviceTemplate, [32]));
+    deck = await mergePptxDecks(deck, await extractSlideSubset(serviceTemplate, [42]), 'STORE');
+    deck = await mergePptxDecks(deck, await extractSlideSubset(serviceTemplate, [31]), 'STORE');
+    deck = await mergePptxDecks(deck, await extractSlideSubset(serviceTemplate, [32]), 'STORE');
     deck = await mergePptxDecks(
       deck,
       await buildAnnouncementDeck(serviceTemplate, 33, [
         { title: '테스트 광고', bodyLines: ['광고 내용입니다.'] },
       ]),
+      'STORE',
     );
     deck = await mergePptxDecks(deck, backSlides);
 
@@ -121,5 +127,5 @@ describe('complete service deck', () => {
       mkdirSync(join(outputPath, '..'), { recursive: true });
       writeFileSync(outputPath, deck);
     }
-  });
+  }, 20000);
 });

@@ -18,7 +18,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Deploy Worker and sync secrets
+      # Cloudflare rejects `secret bulk` when the latest Worker version has
+      # never been deployed (API error 10215). Bootstrap the current script
+      # first; the next step can then update its secrets safely.
+      - name: Deploy Worker code
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          wranglerVersion: '4.110.0'
+          command: deploy
+
+      - name: Sync secrets and redeploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

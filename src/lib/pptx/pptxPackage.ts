@@ -13,10 +13,15 @@ const DISCARD_PARTS = new Set([
   'ppt/commentAuthors.xml',
   'ppt/threadedCommentAuthors.xml',
   'ppt/person.xml',
+  // Google Slides signs this opaque round-trip blob against presentation.xml.
+  // As soon as we append slides or masters the signature is stale, and desktop
+  // PowerPoint offers to repair the file even though every OPC relationship is
+  // otherwise valid. It is editing metadata only, never visible slide content.
+  'ppt/metadata',
 ]);
 
 const DISCARD_REL_KIND =
-  /\/(?:notesSlide|notesMaster|comments?|commentAuthors?|threadedComments?|threadedCommentAuthors?|person|tags|slideUpdateInfo)$/i;
+  /\/(?:notesSlide|notesMaster|comments?|commentAuthors?|threadedComments?|threadedCommentAuthors?|person|tags|slideUpdateInfo|presentationmetadata)$/i;
 
 function attr(tag: string, name: string): string | null {
   return tag.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? null;
@@ -60,6 +65,7 @@ export async function stripNonVisualParts(zip: JSZip): Promise<void> {
     let contentTypes = await contentTypesFile.async('string');
     contentTypes = contentTypes.replace(/<Override\b[^>]*PartName="\/ppt\/(?:notesSlides|notesMasters|comments|threadedComments|tags|persons)\/[^\"]+"[^>]*\/>/g, '');
     contentTypes = contentTypes.replace(/<Override\b[^>]*PartName="\/ppt\/(?:commentAuthors|threadedCommentAuthors|person)\.xml"[^>]*\/>/g, '');
+    contentTypes = contentTypes.replace(/<Override\b[^>]*PartName="\/ppt\/metadata"[^>]*\/>/g, '');
     zip.file('[Content_Types].xml', contentTypes);
   }
 
@@ -70,7 +76,9 @@ export async function stripNonVisualParts(zip: JSZip): Promise<void> {
   const presentationFile = zip.file('ppt/presentation.xml');
   if (presentationFile) {
     const presentation = await presentationFile.async('string');
-    const cleaned = presentation.replace(/<p:notesMasterIdLst>[\s\S]*?<\/p:notesMasterIdLst>|<p:notesMasterIdLst\/>/g, '');
+    const cleaned = presentation
+      .replace(/<p:notesMasterIdLst>[\s\S]*?<\/p:notesMasterIdLst>|<p:notesMasterIdLst\/>/g, '')
+      .replace(/<p:ext\b[^>]*uri="GoogleSlidesCustomDataVersion2"[^>]*>[\s\S]*?<\/p:ext>/g, '');
     if (cleaned !== presentation) zip.file('ppt/presentation.xml', cleaned);
   }
 }

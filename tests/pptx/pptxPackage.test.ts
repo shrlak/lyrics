@@ -29,6 +29,26 @@ describe('pptx package integrity', () => {
     expect(await zip.file('ppt/presentation.xml')!.async('string')).not.toContain('notesMasterIdLst');
   });
 
+  it('removes stale Google Slides round-trip metadata before presentation.xml is changed', async () => {
+    const zip = await JSZip.loadAsync(frontSlides);
+    expect(zip.file('ppt/metadata')).not.toBeNull();
+    expect(await zip.file('ppt/presentation.xml')!.async('string')).toContain('GoogleSlidesCustomDataVersion2');
+    expect(await zip.file('ppt/_rels/presentation.xml.rels')!.async('string')).toContain(
+      'presentationmetadata',
+    );
+
+    await stripNonVisualParts(zip);
+
+    expect(zip.file('ppt/metadata')).toBeNull();
+    expect(await zip.file('ppt/presentation.xml')!.async('string')).not.toContain(
+      'GoogleSlidesCustomDataVersion2',
+    );
+    expect(await zip.file('ppt/_rels/presentation.xml.rels')!.async('string')).not.toContain(
+      'presentationmetadata',
+    );
+    expect(await zip.file('[Content_Types].xml')!.async('string')).not.toContain('/ppt/metadata');
+  });
+
   it('reports relationship references that have no matching relationship entry', async () => {
     const zip = await JSZip.loadAsync(frontSlides);
     await stripNonVisualParts(zip);

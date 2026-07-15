@@ -73,6 +73,14 @@ describe('complete service deck', () => {
     await expect(assertPptxIntegrity(deck)).resolves.toBeUndefined();
     const zip = await JSZip.loadAsync(deck);
     expect(await findBrokenRelationships(zip)).toEqual([]);
+    expect(zip.file('ppt/metadata')).toBeNull();
+    expect(await zip.file('ppt/presentation.xml')!.async('string')).not.toContain(
+      'GoogleSlidesCustomDataVersion2',
+    );
+    expect(await zip.file('ppt/_rels/presentation.xml.rels')!.async('string')).not.toContain(
+      'presentationmetadata',
+    );
+    expect(await zip.file('[Content_Types].xml')!.async('string')).not.toContain('/ppt/metadata');
 
     const slides = slideFiles(zip);
     expect(slides.length).toBeGreaterThanOrEqual(4 + 3 + 1 + 1 + 1 + 1 + 21);

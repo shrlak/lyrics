@@ -45,6 +45,12 @@ interface Props {
   onSaveToLibrary: (song: Song) => void;
   onZoom: () => void;
   onTitleBlur: (title: string) => void;
+  /**
+   * Render only the header + lyric editor + slide preview (no score pane) —
+   * used as the right side of the split-screen conti view, where the score
+   * is already showing on the left.
+   */
+  editorOnly?: boolean;
 }
 
 const QUICK_LABELS = ['V1', 'V2', 'PC', 'C', 'B'];
@@ -63,6 +69,7 @@ export default function SongCard({
   onSaveToLibrary,
   onZoom,
   onTitleBlur,
+  editorOnly = false,
 }: Props) {
   const [orderText, setOrderText] = useState(formatOrder(song.order));
   const [saved, setSaved] = useState(false);
@@ -105,7 +112,10 @@ export default function SongCard({
   }
 
   return (
-    <div className="song-card" data-testid="song-card">
+    <div
+      className={`song-card${editorOnly ? ' song-card-editor-only' : ''}`}
+      data-testid={editorOnly ? 'song-card-editor' : 'song-card'}
+    >
       <div className="song-card-head">
         <span className="song-number">{index + 1}</span>
         <input
@@ -149,10 +159,10 @@ export default function SongCard({
       {song.description && <p className="song-desc">{song.description}</p>}
 
       <div className="song-body">
-        {pageImage ? (
+        {editorOnly ? null : pageImage ? (
           <div className="score-pane">
             <img src={pageImage} alt="악보 미리보기" onClick={onZoom} />
-            <span className="score-hint">클릭하면 크게 보며 가사를 입력할 수 있어요 (p.{song.pageIndex})</span>
+            <span className="score-hint">클릭하면 콘티 전체를 보며 가사를 편집할 수 있어요 (p.{song.pageIndex})</span>
             {onRecognize && (
               <div className="recog-box" data-testid="recog-box">
                 {recog?.status === 'running' ? (
@@ -230,7 +240,8 @@ export default function SongCard({
               <textarea
                 data-testid="section-textarea"
                 rows={Math.max(2, sec.lines.length)}
-                placeholder="가사를 한 줄씩 입력하세요"
+                placeholder="가사를 한 줄씩 입력하세요 (빈 줄 = 슬라이드 나누기)"
+                title="빈 줄을 넣으면 그 앞의 가사와 뒤의 가사가 서로 다른 슬라이드로 나뉩니다"
                 value={sec.lines.join('\n')}
                 onChange={(e) => setSection(i, { text: e.target.value })}
               />

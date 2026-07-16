@@ -39,22 +39,55 @@ async function withTransientRetry<T>(call: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * One recognition try: an engine, and for Gemini the specific model. The
+ * lyric passes expand Gemini into its model ladder (Pro → Flash) so the
+ * strongest available model answers before recognition leaves Gemini.
+ */
+interface EngineAttempt {
+  engine: RecognitionEngine;
+  geminiModel?: string;
+}
+
+function planAttempts(settings: AiSettings, lyricPass: boolean): EngineAttempt[] {
+  const engines = [settings.engine, ...settings.fallbackEngines].filter((e) => e !== 'off');
+  const attempts: EngineAttempt[] = [];
+  for (const engine of engines) {
+    if (engine === 'gemini') {
+      const ladder =
+        lyricPass && settings.geminiLyricsModels.length > 0
+          ? settings.geminiLyricsModels
+          : [settings.geminiModel];
+      for (const geminiModel of ladder) attempts.push({ engine, geminiModel });
+    } else {
+      attempts.push({ engine });
+    }
+  }
+  return attempts;
+}
+
 async function recognizeWithEngine(
-  engine: RecognitionEngine,
+  attempt: EngineAttempt,
   dataUrl: string,
   settings: AiSettings,
 ): Promise<ParsedScore> {
-  if (engine === 'gemini') {
+  if (attempt.engine === 'gemini') {
     const key = settings.geminiApiKey.trim();
     if (!key && !PROXY_URL) throw new Error('Gemini API 키가 설정되지 않았습니다.');
-    return recognizeWithGemini(dataUrl, key, settings.geminiModel, settings.geminiUseSearch, PROXY_URL);
+    return recognizeWithGemini(
+      dataUrl,
+      key,
+      attempt.geminiModel ?? settings.geminiModel,
+      settings.geminiUseSearch,
+      PROXY_URL,
+    );
   }
-  if (engine === 'nvidia') {
+  if (attempt.engine === 'nvidia') {
     const key = settings.nvidiaApiKey.trim();
     if (!key && !PROXY_URL) throw new Error('NVIDIA API 키가 설정되지 않았습니다.');
     return recognizeWithNvidia(dataUrl, key, undefined, PROXY_URL);
   }
-  if (engine === 'huggingface') {
+  if (attempt.engine === 'huggingface') {
     const key = settings.huggingfaceApiKey.trim();
     if (!key && !PROXY_URL) throw new Error('Hugging Face API 키가 설정되지 않았습니다.');
     return recognizeWithHuggingFace(dataUrl, key, undefined, PROXY_URL);
@@ -75,32 +108,34 @@ export interface BatchRecognitionResult {
 }
 
 async function recognizeBatchWithEngine(
-  engine: RecognitionEngine,
+  attempt: EngineAttempt,
   dataUrls: string[],
   settings: AiSettings,
   mode: BatchRecognitionMode,
+  hints?: (string | undefined)[],
 ): Promise<ParsedScore[]> {
-  if (engine === 'gemini') {
+  if (attempt.engine === 'gemini') {
     const key = settings.geminiApiKey.trim();
     if (!key && !PROXY_URL) throw new Error('Gemini API 키가 설정되지 않았습니다.');
     return recognizeBatchWithGemini(
       dataUrls,
       key,
-      settings.geminiModel,
+      attempt.geminiModel ?? settings.geminiModel,
       mode,
       mode === 'full' && settings.geminiUseSearch,
       PROXY_URL,
+      hints,
     );
   }
-  if (engine === 'nvidia') {
+  if (attempt.engine === 'nvidia') {
     const key = settings.nvidiaApiKey.trim();
     if (!key && !PROXY_URL) throw new Error('NVIDIA API 키가 설정되지 않았습니다.');
-    return recognizeBatchWithNvidia(dataUrls, key, mode, undefined, PROXY_URL);
+    return recognizeBatchWithNvidia(dataUrls, key, mode, undefined, PROXY_URL, hints);
   }
-  if (engine === 'huggingface') {
+  if (attempt.engine === 'huggingface') {
     const key = settings.huggingfaceApiKey.trim();
     if (!key && !PROXY_URL) throw new Error('Hugging Face API 키가 설정되지 않았습니다.');
-    return recognizeBatchWithHuggingFace(dataUrls, key, mode, undefined, PROXY_URL);
+    return recognizeBatchWithHuggingFace(dataUrls, key, mode, undefined, PROXY_URL, hints);
   }
   throw new Error('자동 인식이 꺼져 있습니다.');
 }
@@ -122,24 +157,29 @@ export async function recognizeScoreBatch(
   dataUrls: string[],
   settings: AiSettings,
   mode: BatchRecognitionMode,
+  /** Optional per-image title hints (e.g. from the conti cover), advisory only. */
+  hints?: (string | undefined)[],
 ): Promise<BatchRecognitionResult> {
   if (dataUrls.length === 0) return { scores: [], engine: settings.engine };
-  const engines = [settings.engine, ...settings.fallbackEngines].filter((e) => e !== 'off');
-  if (engines.length === 0) throw new Error('자동 인식이 꺼져 있습니다.');
+  const attempts = planAttempts(settings, mode === 'full');
+  if (attempts.length === 0) throw new Error('자동 인식이 꺼져 있습니다.');
 
   let lastError: Error | null = null;
-  for (const engine of engines) {
+  for (const attempt of attempts) {
     try {
       const scores = await withTransientRetry(() =>
-        recognizeBatchWithEngine(engine, dataUrls, settings, mode),
+        recognizeBatchWithEngine(attempt, dataUrls, settings, mode, hints),
       );
       if (scores.every((score) => isEmptyScore(score))) {
         throw new Error('인식 결과가 비어 있습니다.');
       }
-      return { scores, engine };
+      return { scores, engine: attempt.engine };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-      console.warn(`${engine} 일괄 인식 실패, 다음 엔진 시도:`, lastError.message);
+      console.warn(
+        `${attempt.engine}${attempt.geminiModel ? ` (${attempt.geminiModel})` : ''} 일괄 인식 실패, 다음 시도:`,
+        lastError.message,
+      );
     }
   }
   throw lastError || new Error('모든 인식 엔진이 실패했습니다.');
@@ -152,20 +192,23 @@ export async function recognizeScoreBatch(
  * moves on to the next engine.
  */
 export async function recognizeScore(dataUrl: string, settings: AiSettings): Promise<RecognitionResult> {
-  const engines = [settings.engine, ...settings.fallbackEngines].filter((e) => e !== 'off');
-  if (engines.length === 0) {
+  const attempts = planAttempts(settings, true);
+  if (attempts.length === 0) {
     throw new Error('자동 인식이 꺼져 있습니다.');
   }
 
   let lastError: Error | null = null;
-  for (const engine of engines) {
+  for (const attempt of attempts) {
     try {
-      const score = await withTransientRetry(() => recognizeWithEngine(engine, dataUrl, settings));
+      const score = await withTransientRetry(() => recognizeWithEngine(attempt, dataUrl, settings));
       if (isEmptyScore(score)) throw new Error('인식 결과가 비어 있습니다.');
-      return { score, engine };
+      return { score, engine: attempt.engine };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-      console.warn(`${engine} 인식 실패, 다음 엔진 시도:`, lastError.message);
+      console.warn(
+        `${attempt.engine}${attempt.geminiModel ? ` (${attempt.geminiModel})` : ''} 인식 실패, 다음 시도:`,
+        lastError.message,
+      );
     }
   }
 

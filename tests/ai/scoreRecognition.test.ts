@@ -59,13 +59,27 @@ describe('recognizeScore engine priority', () => {
     vi.useRealTimers();
   });
 
-  it('uses Gemini first and reports it as the engine', async () => {
+  it('uses Gemini first — leading with the strongest lyric model — and reports the engine', async () => {
     vi.mocked(recognizeWithGemini).mockResolvedValue(result);
     const out = await recognizeScore('data:image/png;base64,x', settings);
     expect(out.engine).toBe('gemini');
     expect(recognizeWithGemini).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(recognizeWithGemini).mock.calls[0][2]).toBe('gemini-2.5-pro');
     expect(recognizeWithNvidia).not.toHaveBeenCalled();
     expect(recognizeWithHuggingFace).not.toHaveBeenCalled();
+  });
+
+  it('falls from Gemini Pro to Gemini Flash before leaving Gemini', async () => {
+    vi.mocked(recognizeWithGemini)
+      .mockRejectedValueOnce(new RecognitionError('Gemini 호출 실패: HTTP 400', 400))
+      .mockResolvedValueOnce(result);
+    const out = await recognizeScore('data:image/png;base64,x', settings);
+    expect(out.engine).toBe('gemini');
+    expect(vi.mocked(recognizeWithGemini).mock.calls.map((call) => call[2])).toEqual([
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+    ]);
+    expect(recognizeWithNvidia).not.toHaveBeenCalled();
   });
 
   it('falls back to NVIDIA once Gemini fails (quota/tokens exhausted)', async () => {
@@ -73,7 +87,8 @@ describe('recognizeScore engine priority', () => {
     vi.mocked(recognizeWithNvidia).mockResolvedValue(result);
     const out = await recognizeScore('data:image/png;base64,x', settings);
     expect(out.engine).toBe('nvidia');
-    expect(recognizeWithGemini).toHaveBeenCalledTimes(1);
+    // Both Gemini lyric models (Pro, Flash) are tried before leaving Gemini.
+    expect(recognizeWithGemini).toHaveBeenCalledTimes(2);
     expect(recognizeWithNvidia).toHaveBeenCalledTimes(1);
     expect(recognizeWithHuggingFace).not.toHaveBeenCalled();
   });
@@ -91,7 +106,8 @@ describe('recognizeScore engine priority', () => {
     vi.mocked(recognizeWithNvidia).mockRejectedValue(new Error('down'));
     vi.mocked(recognizeWithHuggingFace).mockRejectedValue(new Error('down'));
     await expect(recognizeScore('data:image/png;base64,x', settings)).rejects.toThrow('down');
-    expect(recognizeWithGemini).toHaveBeenCalledTimes(1);
+    // Gemini is tried once per lyric model (Pro, then Flash).
+    expect(recognizeWithGemini).toHaveBeenCalledTimes(2);
     expect(recognizeWithNvidia).toHaveBeenCalledTimes(1);
     expect(recognizeWithHuggingFace).toHaveBeenCalledTimes(1);
   });
@@ -109,12 +125,13 @@ describe('recognizeScore engine priority', () => {
     expect(recognizeWithNvidia).not.toHaveBeenCalled();
   });
 
-  it('does not retry a permanent failure (400) — moves straight to the next engine', async () => {
+  it('does not retry a permanent failure (400) — moves straight to the next attempt', async () => {
     vi.mocked(recognizeWithGemini).mockRejectedValue(new RecognitionError('Gemini 호출 실패: HTTP 400', 400));
     vi.mocked(recognizeWithNvidia).mockResolvedValue(result);
     const out = await recognizeScore('data:image/png;base64,x', settings);
     expect(out.engine).toBe('nvidia');
-    expect(recognizeWithGemini).toHaveBeenCalledTimes(1);
+    // One call per Gemini lyric model, no per-model retries.
+    expect(recognizeWithGemini).toHaveBeenCalledTimes(2);
   });
 
   it('treats a completely empty answer as a failure and tries the next engine', async () => {
@@ -134,7 +151,7 @@ describe('recognizeScoreBatch', () => {
     vi.clearAllMocks();
   });
 
-  it('passes every image to Gemini in one batch call', async () => {
+  it('passes every image to Gemini in one batch call (titles use the fast model)', async () => {
     vi.mocked(recognizeBatchWithGemini).mockResolvedValue([first, second]);
 
     const out = await recognizeScoreBatch(['image-1', 'image-2'], settings, 'titles');
@@ -149,8 +166,24 @@ describe('recognizeScoreBatch', () => {
       'titles',
       false,
       undefined,
+      undefined,
     );
     expect(recognizeWithGemini).not.toHaveBeenCalled();
+  });
+
+  it('leads the full pass with Gemini Pro and forwards the title hints', async () => {
+    vi.mocked(recognizeBatchWithGemini)
+      .mockRejectedValueOnce(new RecognitionError('Gemini 일괄 호출 실패: HTTP 400', 400))
+      .mockResolvedValueOnce([first, second]);
+
+    const hints = ['주 은혜임을', undefined];
+    const out = await recognizeScoreBatch(['image-1', 'image-2'], settings, 'full', hints);
+
+    expect(out.engine).toBe('gemini');
+    const calls = vi.mocked(recognizeBatchWithGemini).mock.calls;
+    expect(calls.map((call) => call[2])).toEqual(['gemini-2.5-pro', 'gemini-2.5-flash']);
+    expect(calls[0][6]).toEqual(hints);
+    expect(calls[1][6]).toEqual(hints);
   });
 
   it('falls back as a whole batch instead of retrying each image separately', async () => {

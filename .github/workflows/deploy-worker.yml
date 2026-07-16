@@ -30,6 +30,29 @@ jobs:
           wranglerVersion: '4.110.0'
           command: deploy
 
+      # wrangler-action fails outright when a listed secret has no value
+      # ("Value for secret X not found in environment"), so build the list
+      # from the repo secrets that are actually set — an unset provider key
+      # must skip that provider, not break the whole deploy.
+      - name: List provider API keys that have repo secrets
+        id: provider-keys
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
+        run: |
+          {
+            echo 'list<<LIST'
+            for name in GEMINI_API_KEY NVIDIA_API_KEY HUGGINGFACE_API_KEY; do
+              if [ -n "${!name}" ]; then
+                echo "$name"
+              else
+                echo "skipping $name — no repo secret set" >&2
+              fi
+            done
+            echo 'LIST'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Sync secrets and redeploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
@@ -42,13 +65,10 @@ jobs:
           # command fails to upload secrets.
           wranglerVersion: '4.110.0'
           command: deploy
-          # Pushes each listed env var (below) into the Worker as a secret
-          # via `wrangler secret put` before deploying. Only keys with a
-          # non-empty repo secret get set — leave one blank to skip it.
-          secrets: |
-            GEMINI_API_KEY
-            NVIDIA_API_KEY
-            HUGGINGFACE_API_KEY
+          # Pushes each listed env var into the Worker as a secret before
+          # deploying. The list comes from the step above, so only keys with
+          # a non-empty repo secret are attempted.
+          secrets: ${{ steps.provider-keys.outputs.list }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}

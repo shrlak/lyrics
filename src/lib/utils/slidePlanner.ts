@@ -44,9 +44,33 @@ export function sortSectionsByOrder(sections: Section[], order: string[]): Secti
   return sorted;
 }
 
-function usableLines(section: Section | undefined): string[] {
+/**
+ * A section's lines grouped into blocks separated by blank lines. A blank
+ * line typed inside a section is a deliberate break: the lyrics before it and
+ * the lyrics after it must never share a slide, while each block on its own
+ * is still chunked by 슬라이드당 줄 수 exactly like an unbroken section.
+ */
+function lineBlocks(section: Section | undefined): string[][] {
   if (!section) return [];
-  return section.lines.map((l) => l.trim()).filter((l) => l.length > 0);
+  const blocks: string[][] = [];
+  let current: string[] = [];
+  for (const raw of section.lines) {
+    const line = raw.trim();
+    if (line.length === 0) {
+      if (current.length > 0) {
+        blocks.push(current);
+        current = [];
+      }
+      continue;
+    }
+    current.push(line);
+  }
+  if (current.length > 0) blocks.push(current);
+  return blocks;
+}
+
+function usableLines(section: Section | undefined): string[] {
+  return lineBlocks(section).flat();
 }
 
 /** Order tokens (except "I") that resolve to no section with at least one non-empty line. */
@@ -88,6 +112,11 @@ function chunkBalanced<T>(items: T[], size: number): T[][] {
  * repeated slides — repeats are handled live by the operator jumping back.
  * The order determines which parts appear and their first-appearance order;
  * with no order given, every section is included in its listed order.
+ *
+ * Within a section, a blank line forces a slide boundary: the lines above it
+ * and below it are planned as separate runs (each still split by
+ * 슬라이드당 줄 수), so a deliberate break in the lyrics never gets merged
+ * onto one slide.
  */
 export function planSlides(song: Song): SlidePlan[] {
   const linesPerSlide =
@@ -102,10 +131,12 @@ export function planSlides(song: Song): SlidePlan[] {
     const section = findSection(song.sections, token);
     if (!section || seen.has(section)) continue;
     seen.add(section);
-    const lines = usableLines(section);
-    if (lines.length === 0) continue;
-    for (const group of chunkBalanced(lines, linesPerSlide)) {
-      plans.push({ kind: 'lyrics', title: song.title, lines: group });
+    // Blank lines split the section into blocks that never share a slide;
+    // each block is then chunked by 슬라이드당 줄 수 as usual.
+    for (const block of lineBlocks(section)) {
+      for (const group of chunkBalanced(block, linesPerSlide)) {
+        plans.push({ kind: 'lyrics', title: song.title, lines: group });
+      }
     }
   }
   return plans;

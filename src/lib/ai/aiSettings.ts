@@ -10,7 +10,14 @@ export type RecognitionEngine = 'gemini' | 'nvidia' | 'huggingface' | 'off';
 export interface AiSettings {
   engine: RecognitionEngine;
   geminiApiKey: string;
+  /** Model for the quick title-identification pass (speed matters there). */
   geminiModel: string;
+  /**
+   * Models tried in order for the lyric passes (batch full + per-page rescue),
+   * strongest first. A model that fails or is over quota falls to the next
+   * before recognition moves on to the non-Gemini engines.
+   */
+  geminiLyricsModels: string[];
   /** Cross-check recognized lyrics against the web via Gemini's Google Search grounding. */
   geminiUseSearch: boolean;
   nvidiaApiKey: string;
@@ -21,10 +28,19 @@ export interface AiSettings {
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 
+/**
+ * Reading dense Korean lyric type under the staves is the hard part, so the
+ * lyric passes lead with Gemini's strongest vision model and only then drop
+ * to Flash. Pro's free-tier daily quota is small, but one conti a week fits;
+ * when it is exhausted the ladder falls to Flash automatically.
+ */
+export const DEFAULT_GEMINI_LYRICS_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash'];
+
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   engine: 'gemini',
   geminiApiKey: '',
   geminiModel: DEFAULT_GEMINI_MODEL,
+  geminiLyricsModels: [...DEFAULT_GEMINI_LYRICS_MODELS],
   geminiUseSearch: true,
   nvidiaApiKey: '',
   huggingfaceApiKey: '',

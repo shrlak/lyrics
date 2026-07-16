@@ -152,15 +152,37 @@ describe('planSlides (minimal parts, no 콘티-order expansion)', () => {
     expect(plans.map((p) => p.lines?.length ?? 0)).toEqual([0, 3, 3]);
   });
 
-  it('respects linesPerSlide and skips blank lines', () => {
+  it('splits a section at a blank line: lyrics before and after never share a slide', () => {
     const s = song({
-      sections: [{ label: 'V1', lines: ['a', ' ', 'b', '', 'c'] }],
+      sections: [{ label: 'V1', lines: ['a', 'b', '', 'c', 'd'] }],
       order: ['V1'],
-      linesPerSlide: 2,
+      linesPerSlide: 4,
     });
     const plans = planSlides(s);
-    expect(plans[1].lines).toEqual(['a', 'b']);
-    expect(plans[2].lines).toEqual(['c']);
+    // Without the blank line all four lines would fit one slide; the break
+    // forces two.
+    expect(plans.map((p) => p.lines ?? [])).toEqual([[], ['a', 'b'], ['c', 'd']]);
+  });
+
+  it('chunks each blank-line block by linesPerSlide exactly like an unbroken section', () => {
+    const s = song({
+      sections: [{ label: 'C', lines: [...lines(6), '', 'solo'] }],
+      order: ['C'],
+      linesPerSlide: 4,
+    });
+    const plans = planSlides(s);
+    // 6-line block balances into 3+3 (same as today), then the 1-line block.
+    expect(plans.map((p) => p.lines?.length ?? 0)).toEqual([0, 3, 3, 1]);
+  });
+
+  it('ignores leading, trailing, and repeated blank lines', () => {
+    const s = song({
+      sections: [{ label: 'V1', lines: ['', ' ', 'a', '', '', 'b', ' ', ''] }],
+      order: ['V1'],
+      linesPerSlide: 4,
+    });
+    const plans = planSlides(s);
+    expect(plans.map((p) => p.lines ?? [])).toEqual([[], ['a'], ['b']]);
   });
 
   it('skips unknown tokens instead of failing', () => {

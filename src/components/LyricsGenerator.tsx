@@ -30,6 +30,13 @@ const BASE: string = import.meta.env.BASE_URL || '/';
  */
 const RECOGNITION_RENDER_WIDTH = 1600;
 
+/**
+ * The per-page rescue pass re-renders its page even larger: a page the batch
+ * pass failed to read is usually one with small or dense type, and a single
+ * image per request leaves plenty of payload headroom.
+ */
+const RESCUE_RENDER_WIDTH = 2200;
+
 /** How often the recognition progress percentage refreshes on screen. */
 const PROGRESS_TICK_MS = 400;
 
@@ -76,7 +83,8 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
   const [parsing, setParsing] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [recog, setRecog] = useState<Record<string, RecogState>>({});
-  const [zoomPage, setZoomPage] = useState<number | null>(null);
+  // Song being edited in the split-screen conti view (null = closed).
+  const [zoomSongId, setZoomSongId] = useState<string | null>(null);
   const [edited, setEdited] = useState(false);
   const docRef = useRef<ContiDocument | null>(null);
   const autoAttemptedRef = useRef<Set<string>>(new Set());
@@ -91,6 +99,50 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
   useEffect(() => {
     libraryRef.current = library;
   }, [library]);
+  // Mirror of pageImages for async loops that must see the latest cache.
+  const pageImagesRef = useRef<Record<number, string>>({});
+  useEffect(() => {
+    pageImagesRef.current = pageImages;
+  }, [pageImages]);
+
+  const zoomSong = zoomSongId != null ? (songs.find((s) => s.id === zoomSongId) ?? null) : null;
+
+  // The split view shows the whole conti: render any pages (cover included)
+  // that the background music-page pass hasn't produced yet.
+  useEffect(() => {
+    if (zoomSongId == null) return;
+    const doc = docRef.current;
+    if (!doc) return;
+    let cancelled = false;
+    void (async () => {
+      for (let page = 1; page <= doc.parsed.numPages; page++) {
+        if (cancelled) return;
+        if (pageImagesRef.current[page]) continue;
+        try {
+          const url = await doc.renderPage(page, 900);
+          if (!cancelled) setPageImages((imgs) => ({ ...imgs, [page]: url }));
+        } catch {
+          // page preview is best-effort
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [zoomSongId]);
+
+  // Jump the left pane to the page whose thumbnail was clicked.
+  useEffect(() => {
+    if (zoomSongId == null) return;
+    const page = songs.find((s) => s.id === zoomSongId)?.pageIndex;
+    if (page == null) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`split-page-${page}`)?.scrollIntoView({ block: 'start' });
+    });
+    return () => cancelAnimationFrame(frame);
+    // Only on open — later song edits must not yank the scroll position back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoomSongId]);
 
   useEffect(() => {
     libraryPromiseRef.current = (async () => {
@@ -233,7 +285,8 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
         let renderedPages = 0;
         const images = await Promise.all(
           active.map(async (song) => {
-            const url = await doc.renderPage(song.pageIndex as number, RECOGNITION_RENDER_WIDTH);
+            // PNG: lossless line art reads far better than JPEG for OCR.
+            const url = await doc.renderPage(song.pageIndex as number, RECOGNITION_RENDER_WIDTH, 'png');
             renderedPages += 1;
             tracked.realFraction = renderedPages / active.length;
             return url;
@@ -290,6 +343,13 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
         // whole batch fails (payload too large, every engine down for batch
         // requests), the rescue pass below still tries each page separately.
         enterPhase('lyrics', remaining.map(({ song }) => song.id));
+        // Title hints: the conti cover's title is ground truth when present;
+        // otherwise reuse what the quick title pass read.
+        const hintFor = ({ song, identity }: { song: Song; identity: ParsedScore }) => {
+          const coverTitle = song.title.trim();
+          if (coverTitle && !/^새 찬양/.test(coverTitle)) return coverTitle;
+          return identity.title?.trim() || undefined;
+        };
         let lyricScores: ParsedScore[] | null = null;
         let lyricEngine = '';
         try {
@@ -297,6 +357,7 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
             remaining.map(({ image }) => image),
             settings,
             'full',
+            remaining.map(hintFor),
           );
           lyricScores = lyricResult.scores;
           lyricEngine = lyricResult.engine;
@@ -358,7 +419,11 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
         await Promise.all(
           needRescue.map(async ({ song, image, identity }) => {
             try {
-              const single = await recognizeScore(image, settings);
+              // Re-render sharper for the retry; fall back to the batch image.
+              const rescueImage = await doc
+                .renderPage(song.pageIndex as number, RESCUE_RENDER_WIDTH, 'png')
+                .catch(() => image);
+              const single = await recognizeScore(rescueImage, settings);
               if (isCancelled(song.id)) return;
               const known = scoreById.get(song.id);
               const merged: ParsedScore = {
@@ -732,7 +797,7 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
             onMove={moveSong}
             onRemove={removeSong}
             onSaveToLibrary={handleSaveToLibrary}
-            onZoom={() => setZoomPage(song.pageIndex ?? null)}
+            onZoom={() => setZoomSongId(song.id)}
             onTitleBlur={(title) => {
               const hit = findEntry(library, title);
               if (hit && !songHasLyrics(song)) {
@@ -769,9 +834,56 @@ export default function LyricsGenerator({ onSongsChange, onDateDetected, onConti
           />
         </Modal>
       )}
-      {zoomPage != null && pageImages[zoomPage] && (
-        <Modal title={`악보 (p.${zoomPage})`} wide onClose={() => setZoomPage(null)}>
-          <img className="zoom-img" src={pageImages[zoomPage]} alt={`악보 ${zoomPage}페이지`} />
+      {zoomSong && (
+        <Modal
+          title={`콘티 보기 — ${zoomSong.title.trim() || '제목 없음'}`}
+          full
+          onClose={() => setZoomSongId(null)}
+        >
+          <div className="split-view" data-testid="split-view">
+            <div className="split-view-pdf" data-testid="split-view-pdf">
+              {(docRef.current
+                ? Array.from({ length: docRef.current.parsed.numPages }, (_, i) => i + 1)
+                : zoomSong.pageIndex != null
+                  ? [zoomSong.pageIndex]
+                  : []
+              ).map((page) => (
+                <figure
+                  key={page}
+                  id={`split-page-${page}`}
+                  className={`split-page${zoomSong.pageIndex === page ? ' split-page-active' : ''}`}
+                >
+                  {pageImages[page] ? (
+                    <img src={pageImages[page]} alt={`콘티 ${page}페이지`} loading="lazy" />
+                  ) : (
+                    <div className="split-page-loading">페이지 {page} 준비 중…</div>
+                  )}
+                  <figcaption className="split-page-number">p.{page}</figcaption>
+                </figure>
+              ))}
+            </div>
+            <div className="split-view-editor" data-testid="split-view-editor">
+              <SongCard
+                editorOnly
+                song={zoomSong}
+                index={songs.findIndex((s) => s.id === zoomSong.id)}
+                total={songs.length}
+                recog={recog[zoomSong.id]}
+                onChange={updateSong}
+                onMove={moveSong}
+                onRemove={removeSong}
+                onSaveToLibrary={handleSaveToLibrary}
+                onZoom={() => {}}
+                onTitleBlur={(title) => {
+                  const hit = findEntry(library, title);
+                  if (hit && !songHasLyrics(zoomSong)) {
+                    setEdited(true);
+                    fillFromLibrary(zoomSong, hit);
+                  }
+                }}
+              />
+            </div>
+          </div>
         </Modal>
       )}
     </div>

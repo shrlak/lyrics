@@ -11,8 +11,14 @@ const BASE: string = (import.meta.env && import.meta.env.BASE_URL) || '/';
 
 export interface ContiDocument {
   parsed: ParsedConti;
-  /** Render a page (1-based) to a JPEG data URL, scaled to maxWidth CSS px. */
-  renderPage(pageNumber: number, maxWidth?: number): Promise<string>;
+  /**
+   * Render a page (1-based) to a data URL, scaled to maxWidth CSS px.
+   * `format: 'png'` renders losslessly — scores are black-on-white line art,
+   * so PNG both compresses well and avoids the JPEG ringing around small
+   * lyric type that hurts AI recognition. JPEG stays the default for
+   * on-screen previews.
+   */
+  renderPage(pageNumber: number, maxWidth?: number, format?: 'jpeg' | 'png'): Promise<string>;
   destroy(): void;
 }
 
@@ -87,7 +93,7 @@ export async function loadConti(data: ArrayBuffer): Promise<ContiDocument> {
 
   return {
     parsed,
-    async renderPage(pageNumber: number, maxWidth = 900): Promise<string> {
+    async renderPage(pageNumber: number, maxWidth = 900, format: 'jpeg' | 'png' = 'jpeg'): Promise<string> {
       const page = await doc.getPage(pageNumber);
       const base = page.getViewport({ scale: 1 });
       const viewport = page.getViewport({ scale: maxWidth / base.width });
@@ -97,7 +103,7 @@ export async function loadConti(data: ArrayBuffer): Promise<ContiDocument> {
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('캔버스를 만들 수 없습니다.');
       await page.render({ canvasContext: ctx, viewport }).promise;
-      return canvas.toDataURL('image/jpeg', 0.85);
+      return format === 'png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.85);
     },
     destroy() {
       void loadingTask.destroy();

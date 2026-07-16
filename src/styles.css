@@ -1545,6 +1545,19 @@ body {
 .modal-wide {
   max-width: 900px;
 }
+.modal-full {
+  max-width: min(1500px, 96vw);
+  width: 96vw;
+  height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-full .modal-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -1576,6 +1589,77 @@ body {
 }
 .zoom-img {
   width: 100%;
+}
+
+/* Split-screen conti view: whole PDF on the left, lyric editor on the right */
+.split-view {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+.split-view-pdf {
+  flex: 1.15;
+  min-width: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  border-right: 1px solid var(--hairline);
+}
+.split-page {
+  position: relative;
+  margin: 0 10px 12px 0;
+  scroll-margin-top: 8px;
+}
+.split-page img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: #fff;
+}
+.split-page-active img {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.split-page-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  border: 1px dashed var(--hairline);
+  border-radius: 8px;
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}
+.split-page-number {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.72rem;
+}
+.split-view-editor {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+.split-view-editor .song-card-editor-only {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .split-view {
+    flex-direction: column;
+  }
+  .split-view-pdf {
+    flex: 1;
+    max-height: 45vh;
+    border-right: none;
+    border-bottom: 1px solid var(--hairline);
+  }
 }
 
 .library-manager table {

@@ -54,6 +54,16 @@ describe('buildNvidiaBatchBody', () => {
     expect(texts.some((text) => text?.includes('imageIndex: 1'))).toBe(true);
     expect(body.messages[0].content.filter((part) => part.type === 'image_url')).toHaveLength(2);
   });
+
+  it('attaches a title hint to its image marker only', () => {
+    const body = buildNvidiaBatchBody([DATA_URL, DATA_URL], 'full', undefined, ['주 은혜임을', undefined]) as {
+      messages: { content: { type: string; text?: string }[] }[];
+    };
+    const texts = body.messages[0].content.filter((part) => part.type === 'text').map((part) => part.text ?? '');
+    expect(texts.some((text) => text.includes('imageIndex: 0 (제목 힌트: 주 은혜임을)'))).toBe(true);
+    expect(texts.some((text) => /^imageIndex: 1$/.test(text))).toBe(true);
+    expect(texts[0]).toContain('힌트는 참고만');
+  });
 });
 
 describe('extractNvidiaText', () => {

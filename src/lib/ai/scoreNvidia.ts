@@ -36,9 +36,12 @@ const BASE_PROMPT = [
   '- sections: 가사를 파트별로 나눈 배열. 각 원소는 {label, lines}.',
   '  label은 V1, V2(절), PC(프리코러스), C, C2(후렴), B(브릿지), O(아웃트로) 등입니다.',
   '  lines는 그 파트의 가사를 한 줄씩 담은 문자열 배열입니다.',
+  '악보에 보이는 가사를 빠짐없이 모두 읽으세요. 도돌이표와 1., 2. 괄호(볼타) 안의 가사도 포함하세요.',
+  '한 줄의 음표 아래 가사가 여러 줄로 쌓여 있으면 여러 절이라는 뜻입니다.',
+  '맨 윗줄부터 차례로 V1, V2… 절로 나누어 읽으세요.',
   '가사는 음절을 나누는 하이픈(-)이나 붙임표 없이 단어를 자연스럽게 이어서 적으세요',
   '(예: "Ce-le-brate" → "Celebrate", "찬-양-해" → "찬양해").',
-  '가사에 없는 내용을 지어내지 마세요.',
+  '가사에 없는 내용을 지어내지 말고, 확신이 없는 글자도 보이는 대로 최대한 읽으세요.',
   '반드시 유효한 JSON 객체 하나만 출력하고, 다른 설명이나 마크다운(```)은 넣지 마세요.',
 ].join('\n');
 
@@ -65,7 +68,7 @@ export function buildNvidiaBody(dataUrl: string, model: string = DEFAULT_NVIDIA_
   };
 }
 
-function batchPrompt(imageCount: number, mode: BatchRecognitionMode): string {
+function batchPrompt(imageCount: number, mode: BatchRecognitionMode, hasHints: boolean): string {
   const task =
     mode === 'titles'
       ? [
@@ -77,6 +80,9 @@ function batchPrompt(imageCount: number, mode: BatchRecognitionMode): string {
   return [
     `서로 다른 한국어 찬양 악보 이미지 ${imageCount}개가 입력됩니다.`,
     '각 이미지 앞의 imageIndex를 결과에 그대로 사용하세요.',
+    ...(hasHints
+      ? ['일부 이미지 앞에는 콘티 표지에서 읽은 제목 힌트가 있습니다. 힌트는 참고만 하고, 악보와 다르면 악보를 따르세요.']
+      : []),
     ...task,
     '반드시 {"results":[...]} 형태의 JSON 객체 하나만 출력하세요.',
   ].join('\n');
@@ -87,10 +93,15 @@ export function buildNvidiaBatchBody(
   dataUrls: string[],
   mode: BatchRecognitionMode,
   model: string = DEFAULT_NVIDIA_MODEL,
+  hints?: (string | undefined)[],
 ): unknown {
-  const content: Record<string, unknown>[] = [{ type: 'text', text: batchPrompt(dataUrls.length, mode) }];
+  const hasHints = (hints ?? []).some((hint) => hint && hint.trim());
+  const content: Record<string, unknown>[] = [
+    { type: 'text', text: batchPrompt(dataUrls.length, mode, hasHints) },
+  ];
   dataUrls.forEach((dataUrl, imageIndex) => {
-    content.push({ type: 'text', text: `imageIndex: ${imageIndex}` });
+    const hint = hints?.[imageIndex]?.trim();
+    content.push({ type: 'text', text: `imageIndex: ${imageIndex}${hint ? ` (제목 힌트: ${hint})` : ''}` });
     content.push({ type: 'image_url', image_url: { url: toImageDataUrl(dataUrl) } });
   });
   return {
@@ -172,9 +183,10 @@ export async function recognizeBatchWithNvidia(
   mode: BatchRecognitionMode,
   model: string = DEFAULT_NVIDIA_MODEL,
   proxyUrl?: string,
+  hints?: (string | undefined)[],
 ): Promise<ParsedScore[]> {
   if (dataUrls.length === 0) return [];
-  const text = await callNvidia(buildNvidiaBatchBody(dataUrls, mode, model), apiKey, proxyUrl);
+  const text = await callNvidia(buildNvidiaBatchBody(dataUrls, mode, model, hints), apiKey, proxyUrl);
   const payload = parseModelJson(
     text,
     'NVIDIA 일괄 응답이 비어 있습니다.',

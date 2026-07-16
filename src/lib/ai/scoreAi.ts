@@ -29,9 +29,12 @@ const BASE_PROMPT = [
   '- sections: 가사를 파트별로 나눈 배열. 각 원소는 {label, lines}.',
   '  label은 V1, V2(절), PC(프리코러스), C, C2(후렴), B(브릿지), O(아웃트로) 등입니다.',
   '  lines는 그 파트의 가사를 한 줄씩 담은 문자열 배열입니다.',
+  '악보에 보이는 가사를 빠짐없이 모두 읽으세요. 도돌이표와 1., 2. 괄호(볼타) 안의 가사도 포함하세요.',
+  '한 줄의 음표 아래 가사가 여러 줄로 쌓여 있으면 여러 절이라는 뜻입니다.',
+  '맨 윗줄부터 차례로 V1, V2… 절로 나누어 읽으세요.',
   '가사는 음절을 나누는 하이픈(-)이나 붙임표 없이 단어를 자연스럽게 이어서 적으세요',
   '(예: "Ce-le-brate" → "Celebrate", "찬-양-해" → "찬양해").',
-  '가사에 없는 내용을 지어내지 마세요.',
+  '가사에 없는 내용을 지어내지 말고, 확신이 없는 글자도 보이는 대로 최대한 읽으세요.',
 ];
 
 /**
@@ -151,6 +154,7 @@ export function buildGeminiBatchBody(
   dataUrls: string[],
   mode: BatchRecognitionMode,
   useSearch = false,
+  hints?: (string | undefined)[],
 ): unknown {
   const task =
     mode === 'titles'
@@ -164,9 +168,13 @@ export function buildGeminiBatchBody(
           'results 배열의 각 항목은 imageIndex, title, key, order, sections를 포함하세요.',
           ...BASE_PROMPT.slice(4),
         ];
+  const hasHints = (hints ?? []).some((hint) => hint && hint.trim());
   const prompt = [
     `아래에는 서로 다른 한국어 찬양 악보 이미지 ${dataUrls.length}개가 있습니다.`,
     '각 이미지 바로 앞의 imageIndex 번호를 결과에 그대로 사용하세요.',
+    ...(hasHints
+      ? ['일부 이미지 앞에는 콘티 표지에서 읽은 제목 힌트가 있습니다. 힌트는 참고만 하고, 악보와 다르면 악보를 따르세요.']
+      : []),
     ...task,
     ...(mode === 'full' && useSearch ? SEARCH_PROMPT : ['반드시 유효한 JSON 객체 하나만 출력하세요.']),
   ].join('\n');
@@ -174,7 +182,8 @@ export function buildGeminiBatchBody(
   const parts: Record<string, unknown>[] = [{ text: prompt }];
   dataUrls.forEach((dataUrl, imageIndex) => {
     const { mimeType, data } = splitDataUrl(dataUrl);
-    parts.push({ text: `imageIndex: ${imageIndex}` });
+    const hint = hints?.[imageIndex]?.trim();
+    parts.push({ text: `imageIndex: ${imageIndex}${hint ? ` (제목 힌트: ${hint})` : ''}` });
     parts.push({ inline_data: { mime_type: mimeType, data } });
   });
 
@@ -274,6 +283,7 @@ export async function recognizeBatchWithGemini(
   mode: BatchRecognitionMode,
   useSearch = false,
   proxyUrl?: string,
+  hints?: (string | undefined)[],
 ): Promise<ParsedScore[]> {
   if (dataUrls.length === 0) return [];
   const useProxy = !apiKey.trim() && !!proxyUrl;
@@ -283,7 +293,7 @@ export async function recognizeBatchWithGemini(
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildGeminiBatchBody(dataUrls, mode, useSearch)),
+    body: JSON.stringify(buildGeminiBatchBody(dataUrls, mode, useSearch, hints)),
   });
 
   if (!res.ok) {

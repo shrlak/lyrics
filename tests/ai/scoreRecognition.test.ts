@@ -67,25 +67,25 @@ describe('recognizeScore engine priority', () => {
     vi.useRealTimers();
   });
 
-  it('uses Gemini first — leading with the strongest lyric model — and reports the engine', async () => {
+  it('uses Gemini first — leading with the benchmark-validated default — and reports the engine', async () => {
     vi.mocked(recognizeWithGemini).mockResolvedValue(result);
     const out = await recognizeScore('data:image/png;base64,x', settings);
     expect(out.engine).toBe('gemini');
     expect(recognizeWithGemini).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(recognizeWithGemini).mock.calls[0][2]).toBe('gemini-2.5-pro');
+    expect(vi.mocked(recognizeWithGemini).mock.calls[0][2]).toBe('gemini-2.5-flash');
     expect(recognizeWithNvidia).not.toHaveBeenCalled();
     expect(recognizeWithHuggingFace).not.toHaveBeenCalled();
   });
 
-  it('falls from Gemini Pro to Gemini Flash before leaving Gemini', async () => {
+  it('falls down the Gemini model ladder before leaving Gemini', async () => {
     vi.mocked(recognizeWithGemini)
       .mockRejectedValueOnce(new RecognitionError('Gemini 호출 실패: HTTP 400', 400))
       .mockResolvedValueOnce(result);
     const out = await recognizeScore('data:image/png;base64,x', settings);
     expect(out.engine).toBe('gemini');
     expect(vi.mocked(recognizeWithGemini).mock.calls.map((call) => call[2])).toEqual([
-      'gemini-2.5-pro',
       'gemini-2.5-flash',
+      'gemini-2.0-flash',
     ]);
     expect(recognizeWithNvidia).not.toHaveBeenCalled();
   });
@@ -122,17 +122,35 @@ describe('recognizeScore engine priority', () => {
     expect(recognizeWithHuggingFace).toHaveBeenCalledTimes(1);
   });
 
-  it('retries the same engine once after a transient failure (429)', async () => {
+  it('retries the same model once after a transient server failure (503)', async () => {
     vi.useFakeTimers();
     vi.mocked(recognizeWithGemini)
-      .mockRejectedValueOnce(new RecognitionError('Gemini 호출 실패: HTTP 429', 429))
+      .mockRejectedValueOnce(new RecognitionError('Gemini 호출 실패: HTTP 503', 503))
       .mockResolvedValueOnce(result);
     const pending = recognizeScore('data:image/png;base64,x', settings);
     await vi.advanceTimersByTimeAsync(2000);
     const out = await pending;
     expect(out.engine).toBe('gemini');
     expect(recognizeWithGemini).toHaveBeenCalledTimes(2);
+    // Both calls used the same (first) model — a retry, not a ladder step.
+    expect(vi.mocked(recognizeWithGemini).mock.calls.map((call) => call[2])).toEqual([
+      'gemini-2.5-flash',
+      'gemini-2.5-flash',
+    ]);
     expect(recognizeWithNvidia).not.toHaveBeenCalled();
+  });
+
+  it('does not retry a rate limit (429) — the model ladder is the retry', async () => {
+    vi.mocked(recognizeWithGemini)
+      .mockRejectedValueOnce(new RecognitionError('Gemini 호출 실패: 429 quota', 429))
+      .mockResolvedValueOnce(result);
+    const out = await recognizeScore('data:image/png;base64,x', settings);
+    expect(out.engine).toBe('gemini');
+    // Second call is the NEXT model, reached without any retry delay.
+    expect(vi.mocked(recognizeWithGemini).mock.calls.map((call) => call[2])).toEqual([
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+    ]);
   });
 
   it('does not retry a permanent failure (400) — moves straight to the next attempt', async () => {
@@ -228,7 +246,7 @@ describe('recognizeScoreBatch', () => {
     expect(recognizeWithGemini).not.toHaveBeenCalled();
   });
 
-  it('leads the full pass with Gemini Pro and forwards the title hints', async () => {
+  it('walks the Gemini ladder on the full pass and forwards the title hints', async () => {
     vi.mocked(recognizeBatchWithGemini)
       .mockRejectedValueOnce(new RecognitionError('Gemini 일괄 호출 실패: HTTP 400', 400))
       .mockResolvedValueOnce([first, second]);
@@ -238,7 +256,7 @@ describe('recognizeScoreBatch', () => {
 
     expect(out.engine).toBe('gemini');
     const calls = vi.mocked(recognizeBatchWithGemini).mock.calls;
-    expect(calls.map((call) => call[2])).toEqual(['gemini-2.5-pro', 'gemini-2.5-flash']);
+    expect(calls.map((call) => call[2])).toEqual(['gemini-2.5-flash', 'gemini-2.0-flash']);
     expect(calls[0][6]).toEqual(hints);
     expect(calls[1][6]).toEqual(hints);
   });

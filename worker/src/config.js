@@ -9,9 +9,9 @@
 // shared key must not be usable with arbitrary expensive models.
 
 export const RECOGNITION_MODEL_CATALOG = [
-  { engine: 'gemini', model: 'gemini-2.5-pro' },
   { engine: 'gemini', model: 'gemini-2.5-flash' },
   { engine: 'gemini', model: 'gemini-2.0-flash' },
+  { engine: 'gemini', model: 'gemini-2.5-pro' },
   { engine: 'nvidia', model: 'nvidia/nemotron-nano-12b-v2-vl' },
   { engine: 'nvidia', model: 'meta/llama-3.2-90b-vision-instruct' },
   { engine: 'nvidia', model: 'google/gemma-3-27b-it' },

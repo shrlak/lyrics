@@ -27,23 +27,26 @@ export interface RecognitionModelInfo extends RecognitionAttempt {
  * proxy's NVIDIA allowlist all derive from it.
  */
 export const RECOGNITION_MODEL_CATALOG: RecognitionModelInfo[] = [
-  {
-    engine: 'gemini',
-    model: 'gemini-2.5-pro',
-    label: 'Gemini 2.5 Pro',
-    note: '가장 정확한 판독 — 무료 한도가 작아 소진되면 아래로 넘어갑니다',
-  },
+  // Flash leads by default: the 50-song accuracy benchmark measured it at
+  // 97-98% on this task, and free-tier keys currently have NO 2.5 Pro quota
+  // (limit 0), so leading with Pro would only waste a failed call per pass.
   {
     engine: 'gemini',
     model: 'gemini-2.5-flash',
     label: 'Gemini 2.5 Flash',
-    note: '빠르고 정확한 기본기 — 주 1회 콘티는 무료 한도로 충분합니다',
+    note: '기본 모델 — 벤치마크 정확도 97%+, 주 1회 콘티는 무료 한도로 충분합니다',
   },
   {
     engine: 'gemini',
     model: 'gemini-2.0-flash',
     label: 'Gemini 2.0 Flash',
     note: '별도의 무료 한도를 가진 예비 Gemini',
+  },
+  {
+    engine: 'gemini',
+    model: 'gemini-2.5-pro',
+    label: 'Gemini 2.5 Pro',
+    note: '유료 키에서 가장 정확 — 무료 키에는 한도가 없어 건너뜁니다',
   },
   {
     engine: 'nvidia',

@@ -16,10 +16,12 @@ import {
 } from '../../worker/src/config.js';
 
 describe('recognition model catalog', () => {
-  it('has unique engine+model entries and starts with the strongest Gemini', () => {
+  it('has unique engine+model entries and leads with the benchmark-validated default', () => {
     const keys = RECOGNITION_MODEL_CATALOG.map(attemptKey);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(RECOGNITION_MODEL_CATALOG[0]).toMatchObject({ engine: 'gemini', model: 'gemini-2.5-pro' });
+    // Flash first: 97%+ on the 50-song benchmark, and free keys have no
+    // 2.5 Pro quota, so Pro must not be the default first attempt.
+    expect(RECOGNITION_MODEL_CATALOG[0]).toMatchObject({ engine: 'gemini', model: 'gemini-2.5-flash' });
     // Multiple providers and multiple models per provider are available.
     expect(RECOGNITION_MODEL_CATALOG.filter((entry) => entry.engine === 'gemini').length).toBeGreaterThan(1);
     expect(RECOGNITION_MODEL_CATALOG.filter((entry) => entry.engine === 'nvidia').length).toBeGreaterThan(1);
@@ -99,6 +101,6 @@ describe('recognition settings without storage (node)', () => {
     const settings = getAiSettings();
     expect(settings.attempts).toEqual(DEFAULT_ATTEMPT_ORDER);
     expect(settings.excludedTitles).toEqual(DEFAULT_EXCLUDED_TITLES);
-    expect(settings.attempts[0]).toEqual({ engine: 'gemini', model: 'gemini-2.5-pro' });
+    expect(settings.attempts[0]).toEqual({ engine: 'gemini', model: 'gemini-2.5-flash' });
   });
 });

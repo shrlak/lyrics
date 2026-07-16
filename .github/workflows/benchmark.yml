@@ -24,10 +24,22 @@ on:
         description: 'Enable Google Search grounding (1/0)'
         default: '0'
         type: string
+  # Pushing a bench/* branch also runs a trial (with the defaults below, or
+  # the values in bench/trial-config.json when present) — useful for agents
+  # without workflow-dispatch permission.
+  push:
+    branches:
+      - 'bench/**'
+
+env:
+  BENCH_MODEL_INPUT: ${{ inputs.model || 'gemini-2.5-flash' }}
+  BENCH_COUNT_INPUT: ${{ inputs.count || '50' }}
+  BENCH_BATCH_INPUT: ${{ inputs.batch || '10' }}
+  BENCH_SEARCH_INPUT: ${{ inputs.search || '0' }}
 
 jobs:
   bench:
-    name: Benchmark ${{ inputs.model }} on ${{ inputs.count }} songs
+    name: Benchmark
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -56,15 +68,31 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Resolve trial parameters
+        id: params
+        run: |
+          MODEL="$BENCH_MODEL_INPUT"; COUNT="$BENCH_COUNT_INPUT"; BATCH="$BENCH_BATCH_INPUT"; SEARCH="$BENCH_SEARCH_INPUT"
+          if [ -f bench/trial-config.json ]; then
+            MODEL=$(node -p "JSON.parse(require('fs').readFileSync('bench/trial-config.json','utf8')).model ?? '$MODEL'")
+            COUNT=$(node -p "JSON.parse(require('fs').readFileSync('bench/trial-config.json','utf8')).count ?? '$COUNT'")
+            BATCH=$(node -p "JSON.parse(require('fs').readFileSync('bench/trial-config.json','utf8')).batch ?? '$BATCH'")
+            SEARCH=$(node -p "JSON.parse(require('fs').readFileSync('bench/trial-config.json','utf8')).search ?? '$SEARCH'")
+          fi
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "batch=$BATCH" >> "$GITHUB_OUTPUT"
+          echo "search=$SEARCH" >> "$GITHUB_OUTPUT"
+          echo "trial: model=$MODEL count=$COUNT batch=$BATCH search=$SEARCH"
+
       - name: Generate score pages
-        run: node bench/generate-scores.mjs --count ${{ inputs.count }}
+        run: node bench/generate-scores.mjs --count ${{ steps.params.outputs.count }}
 
       - name: Run benchmark
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          BENCH_MODEL: ${{ inputs.model }}
-          BENCH_BATCH: ${{ inputs.batch }}
-          BENCH_SEARCH: ${{ inputs.search }}
+          BENCH_MODEL: ${{ steps.params.outputs.model }}
+          BENCH_BATCH: ${{ steps.params.outputs.batch }}
+          BENCH_SEARCH: ${{ steps.params.outputs.search }}
         run: npx vite-node bench/run-bench.ts
 
       - name: Publish summary

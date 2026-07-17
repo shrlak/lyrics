@@ -73,6 +73,36 @@ describe('parseUsageSnapshot', () => {
     });
   });
 
+  it('accepts OpenRouter free-model usage rows', () => {
+    const snapshot = parseUsageSnapshot({
+      models: [
+        {
+          provider: 'openrouter',
+          model: 'nvidia/nemotron-nano-12b-v2-vl:free',
+          period: 'day',
+          periodKey: '2026-07-15',
+          requests: 2,
+          successfulRequests: 2,
+          failedRequests: 0,
+          promptTokens: 1000,
+          outputTokens: 300,
+          totalTokens: 1300,
+          metric: 'requests',
+          used: 2,
+          limit: 50,
+          estimated: false,
+        },
+      ],
+    });
+
+    expect(snapshot.models[0]).toMatchObject({
+      provider: 'openrouter',
+      model: 'nvidia/nemotron-nano-12b-v2-vl:free',
+      used: 2,
+      limit: 50,
+    });
+  });
+
   it('rejects unknown providers instead of displaying untrusted data', () => {
     expect(() =>
       parseUsageSnapshot({

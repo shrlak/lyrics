@@ -3,14 +3,16 @@ import {
   buildUsageSnapshot,
   mergeUsageRecord,
   pacificDateKey,
+  utcDateKey,
   utcMonthKey,
   usageStorageKey,
 } from '../../worker/src/usage.js';
 
 describe('AI proxy usage periods', () => {
-  it('uses Pacific calendar days for Gemini and UTC months for Hugging Face', () => {
+  it('uses Pacific days for Gemini, UTC days for OpenRouter, and UTC months for Hugging Face', () => {
     const instant = new Date('2026-07-15T05:30:00.000Z');
     expect(pacificDateKey(instant)).toBe('2026-07-14');
+    expect(utcDateKey(instant)).toBe('2026-07-15');
     expect(utcMonthKey(instant)).toBe('2026-07');
   });
 });
@@ -51,10 +53,10 @@ describe('AI proxy usage records', () => {
     ).toContain('gemini-2.5-flash');
   });
 
-  it('accumulates NVIDIA requests per UTC month', () => {
+  it('accumulates OpenRouter requests per UTC day', () => {
     const record = mergeUsageRecord(undefined, {
-      provider: 'nvidia',
-      model: 'nvidia/nemotron-nano-12b-v2-vl',
+      provider: 'openrouter',
+      model: 'nvidia/nemotron-nano-12b-v2-vl:free',
       success: true,
       timestamp: '2026-07-15T16:00:00.000Z',
       promptTokens: 900,
@@ -63,9 +65,9 @@ describe('AI proxy usage records', () => {
     });
 
     expect(record).toMatchObject({
-      provider: 'nvidia',
-      period: 'month',
-      periodKey: '2026-07',
+      provider: 'openrouter',
+      period: 'day',
+      periodKey: '2026-07-15',
       requests: 1,
       successfulRequests: 1,
       totalTokens: 1020,
@@ -81,9 +83,16 @@ describe('AI proxy usage records', () => {
       timestamp: now,
       totalTokens: 500,
     });
-    const nvidia = mergeUsageRecord(undefined, {
-      provider: 'nvidia',
-      model: 'nvidia/nemotron-nano-12b-v2-vl',
+    const openRouter = mergeUsageRecord(undefined, {
+      provider: 'openrouter',
+      model: 'nvidia/nemotron-nano-12b-v2-vl:free',
+      success: true,
+      timestamp: now,
+      totalTokens: 700,
+    });
+    const openRouterGemma = mergeUsageRecord(undefined, {
+      provider: 'openrouter',
+      model: 'google/gemma-4-31b-it:free',
       success: true,
       timestamp: now,
       totalTokens: 800,
@@ -97,30 +106,33 @@ describe('AI proxy usage records', () => {
       computeSource: 'provider',
     });
     const snapshot = buildUsageSnapshot(
-      [gemini, nvidia, huggingFace],
+      [gemini, openRouter, openRouterGemma, huggingFace],
       {
         GEMINI_DAILY_REQUEST_LIMIT: '100',
-        NVIDIA_MONTHLY_REQUEST_LIMIT: '1000',
+        OPENROUTER_DAILY_REQUEST_LIMIT: '50',
         HUGGINGFACE_MONTHLY_CREDIT_USD: '0.10',
         HUGGINGFACE_USD_PER_SECOND: '0.00012',
       },
       now,
     );
 
-    expect(snapshot.models).toHaveLength(3);
+    expect(snapshot.models).toHaveLength(4);
     expect(snapshot.models[0]).toMatchObject({ provider: 'gemini', used: 1, limit: 100 });
-    expect(snapshot.models[1]).toMatchObject({
-      provider: 'nvidia',
+    expect(snapshot.models.filter((model) => model.provider === 'openrouter')).toHaveLength(2);
+    expect(snapshot.models.find((model) => model.model === 'google/gemma-4-31b-it:free')).toMatchObject({
+      provider: 'openrouter',
+      model: 'google/gemma-4-31b-it:free',
       metric: 'requests',
       used: 1,
-      limit: 1000,
+      limit: 50,
       estimated: false,
     });
-    expect(snapshot.models[2]).toMatchObject({
+    const huggingFaceUsage = snapshot.models.find((model) => model.provider === 'huggingface');
+    expect(huggingFaceUsage).toMatchObject({
       provider: 'huggingface',
       limit: 0.1,
       providerMeasuredRequests: 1,
     });
-    expect(snapshot.models[2].used).toBeCloseTo(0.0012);
+    expect(huggingFaceUsage?.used).toBeCloseTo(0.0012);
   });
 });

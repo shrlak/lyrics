@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  USAGE_HISTORY_DAYS,
-  USAGE_HISTORY_MONTHS,
   buildUsageSnapshot,
   mergeUsageRecord,
   pacificDateKey,
-  recentPeriodKeys,
   utcDateKey,
   utcMonthKey,
   usageStorageKey,
 } from '../../worker/src/usage.js';
+import { RECOGNITION_MODEL_CATALOG, usageCatalogModels } from '../../worker/src/config.js';
 
 describe('AI proxy usage periods', () => {
   it('uses Pacific days for Gemini, UTC days for OpenRouter, and UTC months for Hugging Face', () => {
@@ -17,21 +15,6 @@ describe('AI proxy usage periods', () => {
     expect(pacificDateKey(instant)).toBe('2026-07-14');
     expect(utcDateKey(instant)).toBe('2026-07-15');
     expect(utcMonthKey(instant)).toBe('2026-07');
-  });
-
-  it('lists the recent daily periods oldest-first, ending today, across month boundaries', () => {
-    const keys = recentPeriodKeys('openrouter', new Date('2026-07-03T12:00:00.000Z'));
-    expect(keys).toHaveLength(USAGE_HISTORY_DAYS);
-    expect(keys[0]).toBe('2026-06-20');
-    expect(keys[keys.length - 1]).toBe('2026-07-03');
-    expect(new Set(keys).size).toBe(keys.length);
-  });
-
-  it('lists recent months for monthly providers, crossing the year boundary', () => {
-    const keys = recentPeriodKeys('huggingface', new Date('2026-02-10T12:00:00.000Z'));
-    expect(keys).toHaveLength(USAGE_HISTORY_MONTHS);
-    expect(keys[0]).toBe('2025-09');
-    expect(keys[keys.length - 1]).toBe('2026-02');
   });
 });
 
@@ -154,45 +137,49 @@ describe('AI proxy usage records', () => {
     expect(huggingFaceUsage?.used).toBeCloseTo(0.0012);
   });
 
-  it('carries an exact zero-filled history for the usage graph', () => {
+  it('maps every catalog model to the provider/model pair it is metered under', () => {
+    const pairs = usageCatalogModels({});
+    expect(pairs).toHaveLength(RECOGNITION_MODEL_CATALOG.length);
+    // The Nemotron slot meters as the exact :free slug the Worker forwards to.
+    expect(pairs).toContainEqual({ provider: 'openrouter', model: 'nvidia/nemotron-nano-12b-v2-vl:free' });
+    expect(pairs).toContainEqual({ provider: 'gemini', model: 'gemini-2.5-flash' });
+    expect(pairs).toContainEqual({ provider: 'gemini', model: 'gemini-2.0-flash' });
+    expect(pairs).toContainEqual({ provider: 'openrouter', model: 'google/gemma-4-31b-it:free' });
+    expect(pairs).toContainEqual({ provider: 'openrouter', model: 'google/gemma-3-27b-it:free' });
+    expect(pairs).toContainEqual({ provider: 'huggingface', model: 'Qwen/Qwen2-VL-7B-Instruct' });
+    // A Hugging Face model override follows the proxy's actual pin.
+    expect(usageCatalogModels({ HUGGINGFACE_MODEL: 'other/model' })).toContainEqual({
+      provider: 'huggingface',
+      model: 'other/model',
+    });
+  });
+
+  it('shows a card for EVERY system model, including ones with no usage yet', () => {
     const now = new Date('2026-07-15T16:00:00.000Z');
-    const today = mergeUsageRecord(undefined, {
-      provider: 'openrouter',
-      model: 'nvidia/nemotron-nano-12b-v2-vl:free',
+    const onlyGemini = mergeUsageRecord(undefined, {
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
       success: true,
       timestamp: now,
+      totalTokens: 500,
     });
-    const twoDaysAgo = mergeUsageRecord(
-      mergeUsageRecord(undefined, {
-        provider: 'openrouter',
-        model: 'nvidia/nemotron-nano-12b-v2-vl:free',
-        success: true,
-        timestamp: '2026-07-13T10:00:00.000Z',
-        totalTokens: 300,
-      }),
-      {
-        provider: 'openrouter',
-        model: 'nvidia/nemotron-nano-12b-v2-vl:free',
-        success: false,
-        timestamp: '2026-07-13T11:00:00.000Z',
-      },
-    );
 
-    const snapshot = buildUsageSnapshot([today, twoDaysAgo], {}, now);
-    const row = snapshot.models.find((model) => model.model === 'nvidia/nemotron-nano-12b-v2-vl:free');
+    const snapshot = buildUsageSnapshot([onlyGemini], {}, now, usageCatalogModels({}));
 
-    expect(row?.history).toHaveLength(USAGE_HISTORY_DAYS);
-    // Oldest first; quiet days are explicit zeros, not gaps.
-    expect(row?.history[0]).toMatchObject({ periodKey: '2026-07-02', requests: 0 });
-    expect(row?.history[USAGE_HISTORY_DAYS - 1]).toMatchObject({ periodKey: '2026-07-15', requests: 1 });
-    expect(row?.history[USAGE_HISTORY_DAYS - 3]).toMatchObject({
-      periodKey: '2026-07-13',
-      requests: 2,
-      successfulRequests: 1,
-      failedRequests: 1,
-      totalTokens: 300,
+    expect(snapshot.models).toHaveLength(RECOGNITION_MODEL_CATALOG.length);
+    expect(snapshot.models.find((model) => model.model === 'gemini-2.5-flash')).toMatchObject({ used: 1 });
+    // Untouched models still appear, as explicit zero rows.
+    expect(snapshot.models.find((model) => model.model === 'google/gemma-3-27b-it:free')).toMatchObject({
+      provider: 'openrouter',
+      requests: 0,
+      used: 0,
+      limit: 50,
     });
-    // Only the CURRENT period feeds the limit bar; history stays separate.
-    expect(row?.used).toBe(1);
+    expect(snapshot.models.find((model) => model.model === 'gemini-2.0-flash')).toMatchObject({
+      provider: 'gemini',
+      requests: 0,
+      used: 0,
+    });
+    expect(snapshot.models.filter((model) => model.provider === 'openrouter')).toHaveLength(3);
   });
 });

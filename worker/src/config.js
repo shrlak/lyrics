@@ -118,3 +118,24 @@ export function resolveOpenRouterRoute(requested) {
 export function adminPassword(env = {}) {
   return env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
 }
+
+/**
+ * Every model in the system as the {provider, model} pair it is METERED
+ * under, so the 사용량 page can show a card per model even before its first
+ * request. The OpenRouter lane meters the exact upstream :free slug the
+ * Worker forwards to; Hugging Face meters whatever model the proxy is
+ * pinned to (HUGGINGFACE_MODEL env override included).
+ */
+export function usageCatalogModels(env = {}) {
+  const models = [];
+  for (const entry of RECOGNITION_MODEL_CATALOG) {
+    if (entry.engine === 'gemini') {
+      models.push({ provider: 'gemini', model: entry.model });
+    } else if (entry.engine === 'nvidia') {
+      models.push({ provider: 'openrouter', model: resolveOpenRouterRoute(entry.model).upstreamModel });
+    } else if (entry.engine === 'huggingface') {
+      models.push({ provider: 'huggingface', model: env.HUGGINGFACE_MODEL || entry.model });
+    }
+  }
+  return models;
+}

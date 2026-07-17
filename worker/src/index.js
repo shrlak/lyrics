@@ -25,7 +25,7 @@ import {
   sanitizeUsageEvent,
   usageStorageKey,
 } from './usage.js';
-import { adminPassword, resolveOpenRouterRoute, sanitizeSharedSettings } from './config.js';
+import { adminPassword, resolveOpenRouterRoute, sanitizeSharedSettings, usageCatalogModels } from './config.js';
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
@@ -117,7 +117,7 @@ async function recordUsage(env, event) {
 async function readUsage(env) {
   const tracker = usageTracker(env);
   if (!tracker) throw new Error('usage tracker is not configured');
-  return buildUsageSnapshot(await tracker.records(), env);
+  return buildUsageSnapshot(await tracker.records(), env, new Date(), usageCatalogModels(env));
 }
 
 function geminiUsageMetadata(responseBody) {

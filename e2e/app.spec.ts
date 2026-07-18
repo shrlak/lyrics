@@ -220,7 +220,7 @@ test('a real PowerPoint deck\'s placeholder text inherits position/size/font fro
 
   const titleShape = page.getByTestId('slide-overview-row-front').first().locator('.slide-thumb-text');
   await expect(titleShape).toContainText('플레이스홀더 제목');
-  const width = await titleShape.evaluate((el) => parseFloat((el as HTMLElement).style.width));
+  const width = await titleShape.evaluate((el) => parseFloat((el as any).style.width));
   // The layout's own xfrm (7772400 EMU wide) at the 248px-wide thumbnail
   // scale is ~211px — distinct from the master's differing xfrm (~223px)
   // and from a missing/0-width box, so this pins down which part the box
@@ -230,7 +230,7 @@ test('a real PowerPoint deck\'s placeholder text inherits position/size/font fro
   const fontSize = await titleShape
     .locator('.slide-thumb-run')
     .first()
-    .evaluate((el) => parseFloat((el as HTMLElement).style.fontSize));
+    .evaluate((el) => parseFloat((el as any).style.fontSize));
   // The master's titleStyle default (44pt) at thumbnail scale is ~15px —
   // distinct from the 18pt no-inheritance-found fallback (~6px).
   expect(fontSize).toBeGreaterThan(12);

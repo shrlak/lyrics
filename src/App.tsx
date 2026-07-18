@@ -89,6 +89,9 @@ function WizardNavigation({ step, onMove }: WizardNavigationProps) {
 
 export default function App() {
   const [activeStep, setActiveStep] = useState(0);
+  // Which way the active wizard step just moved, so the incoming panel can
+  // sweep in from the matching side instead of a single fixed direction.
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward');
   const [viewMode, setViewMode] = useState<'wizard' | 'editor'>('wizard');
   const [scrolled, setScrolled] = useState(false);
   const [songs, setSongs] = useState<Song[]>([]);
@@ -421,6 +424,7 @@ export default function App() {
   const totalSlideCount = fixedSlideCount + lyricsSlideCount + announcementItems.length;
 
   function moveToStep(step: number) {
+    setDirection(step >= activeStep ? 'forward' : 'back');
     setActiveStep(step);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -528,7 +532,7 @@ export default function App() {
               savingToLibrary={savingToLibrary}
             />
           )}
-          <main>
+          <main data-direction={direction}>
             <section
               className={`wizard-panel${isPanelActive('lyrics') ? ' active' : ''}`}
               aria-hidden={!isPanelActive('lyrics')}

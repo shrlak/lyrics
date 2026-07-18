@@ -765,34 +765,44 @@ body {
   transform: scale(1.12);
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
+main {
+  /* Clips the step-change sweep so it can never open a horizontal
+     scrollbar (a translated child still extends the scrollable area even
+     though the transform itself doesn't affect layout). `clip` rather than
+     `hidden` specifically: unlike `hidden`, it doesn't force the other axis
+     to `auto`, so it doesn't turn main into a vertical scroll container
+     either — the library-search dropdown still floats freely below its
+     input past the panel's own bottom edge instead of getting clipped. */
+  overflow-x: clip;
+}
 .wizard-panel {
   display: none;
 }
 .wizard-panel.active {
   display: block;
+  animation: panel-sweep-forward 0.4s var(--ease-smooth) both;
 }
-.wizard-panel.active > * {
-  animation: panel-in 0.55s var(--ease-smooth) both;
+main[data-direction='back'] .wizard-panel.active {
+  animation-name: panel-sweep-back;
 }
-.wizard-panel.active > *:nth-child(1) {
-  animation-delay: 0s;
-}
-.wizard-panel.active > *:nth-child(2) {
-  animation-delay: 0.07s;
-}
-.wizard-panel.active > *:nth-child(3) {
-  animation-delay: 0.14s;
-}
-@keyframes panel-in {
+@keyframes panel-sweep-forward {
   from {
     opacity: 0;
-    transform: translateY(16px) scale(0.98);
-    filter: blur(6px);
+    transform: translateX(20px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
+    transform: translateX(0);
+  }
+}
+@keyframes panel-sweep-back {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 .wizard-page-header {
@@ -937,6 +947,24 @@ body {
   flex: none;
 }
 
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes reveal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
 .banner {
   display: flex;
   justify-content: space-between;
@@ -949,6 +977,7 @@ body {
   margin-top: 16px;
   font-size: 0.92rem;
   transition: background-color 0.2s var(--ease), border-color 0.2s var(--ease), color 0.2s var(--ease);
+  animation: reveal-in 0.3s var(--ease-smooth) both;
 }
 .banner button {
   border: none;
@@ -1000,6 +1029,10 @@ body {
   box-shadow: var(--shadow-md);
   animation: toast-in 0.18s var(--ease);
 }
+.toast.toast-leaving {
+  animation: toast-out 0.22s var(--ease) forwards;
+  pointer-events: none;
+}
 .toast button {
   flex: none;
   border: none;
@@ -1031,6 +1064,16 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
   }
 }
 
@@ -1075,6 +1118,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 10px;
+  animation: reveal-fade 0.25s var(--ease-smooth) both;
 }
 .spinner {
   width: 24px;
@@ -1096,6 +1140,7 @@ body {
   border-radius: 12px;
   padding: 14px 16px;
   background: var(--canvas);
+  animation: reveal-in 0.32s var(--ease-smooth) both;
 }
 .info-grid {
   display: flex;
@@ -1175,6 +1220,7 @@ body {
   margin-bottom: 18px;
   background: var(--surface);
   transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  animation: reveal-in 0.3s var(--ease-smooth) both;
 }
 .song-card:focus-within {
   border-color: var(--accent);
@@ -1756,12 +1802,23 @@ body {
   z-index: 50;
   animation: overlay-in 0.15s var(--ease);
 }
+.modal-overlay-closing {
+  animation: overlay-out 0.18s var(--ease) forwards;
+}
 @keyframes overlay-in {
   from {
     opacity: 0;
   }
   to {
     opacity: 1;
+  }
+}
+@keyframes overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }
 .modal {
@@ -1776,6 +1833,10 @@ body {
   flex-direction: column;
   animation: modal-in 0.18s var(--ease);
 }
+.modal-closing {
+  animation: modal-out 0.16s var(--ease) forwards;
+  pointer-events: none;
+}
 @keyframes modal-in {
   from {
     opacity: 0;
@@ -1784,6 +1845,16 @@ body {
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
+  }
+}
+@keyframes modal-out {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
   }
 }
 .modal-wide {
@@ -1810,6 +1881,9 @@ body {
     padding-top: 6px;
     animation: sheet-in 0.28s var(--ease-smooth);
   }
+  .modal-closing {
+    animation: sheet-out 0.22s var(--ease) forwards;
+  }
   .modal::before {
     content: '';
     flex: none;
@@ -1831,6 +1905,14 @@ body {
   }
   to {
     transform: translateY(0);
+  }
+}
+@keyframes sheet-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
   }
 }
 .modal-full .modal-body {
@@ -2071,6 +2153,7 @@ body {
   gap: 6px;
   color: var(--accent-dark);
   font-size: 0.82rem;
+  animation: reveal-in 0.3s var(--ease-smooth) both;
 }
 .recog-running-row {
   display: flex;
@@ -2101,6 +2184,7 @@ body {
 .recog-error {
   color: var(--danger-ink);
   font-size: 0.78rem;
+  animation: reveal-fade 0.3s var(--ease-smooth) both;
 }
 .recog-error-detail {
   display: block;
@@ -2112,6 +2196,7 @@ body {
 .recog-done {
   color: var(--accent-dark);
   font-size: 0.78rem;
+  animation: reveal-fade 0.3s var(--ease-smooth) both;
 }
 
 @media (max-width: 760px) {

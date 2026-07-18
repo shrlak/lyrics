@@ -182,6 +182,10 @@ export default function SongCard({
     <div
       className={`song-card${editorOnly ? ' song-card-editor-only' : ''}`}
       data-testid={editorOnly ? 'song-card-editor' : 'song-card'}
+      // Cascades in when several cards mount at once (conti upload, library
+      // fill); capped so a long song list doesn't leave the last cards
+      // waiting on a slow tail of delayed entrances.
+      style={{ animationDelay: `${Math.min(index, 8) * 30}ms` }}
     >
       <div className="song-card-head">
         <span className="song-number">{index + 1}</span>
